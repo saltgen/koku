@@ -59,6 +59,7 @@ function run_smoke_tests() {
         --set-template-ref ${APP_NAME}/${COMPONENT_NAME}=${ghprbActualCommit} \
         --set-image-tag ${IMAGE}=${IMAGE_TAG} \
         --namespace ${NAMESPACE} \
+        --source=appsre \
         ${COMPONENTS_ARG} \
         ${COMPONENTS_RESOURCES_ARG} \
         --set-parameter rbac/MIN_REPLICAS=1 \
