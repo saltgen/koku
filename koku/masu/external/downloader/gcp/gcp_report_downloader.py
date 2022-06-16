@@ -5,7 +5,6 @@
 """GCP Report Downloader."""
 import csv
 import datetime
-import hashlib
 import logging
 import os
 from functools import cached_property
@@ -161,8 +160,8 @@ class GCPReportDownloader(ReportDownloaderBase, DownloaderInterface):
         else:
             months_delta = Config.INITIAL_INGEST_NUM_MONTHS - 1
             scan_start = dh.today - relativedelta(months=months_delta)
-            scan_start = scan_start.replace(day=1).date()
-        return scan_start
+            scan_start = scan_start.replace(day=1)
+        return scan_start.date()
 
     @cached_property
     def scan_end(self):
@@ -220,13 +219,13 @@ class GCPReportDownloader(ReportDownloaderBase, DownloaderInterface):
         mapping = {}
         client = bigquery.Client()
         export_partition_date_query = f"""
-            SELECT DATE(_PARTITIONTIME), max(export_time)  FROM {self.table_name}
+            SELECT DATE(_PARTITIONTIME), DATETIME(max(export_time))  FROM {self.table_name}
             WHERE DATE(_PARTITIONTIME) BETWEEN '{self.scan_start}'
             AND '{self.scan_end}' GROUP BY DATE(_PARTITIONTIME)
         """
         eq_result = client.query(export_partition_date_query).result()
         for row in eq_result:
-            mapping[row[0]] = row[1]
+            mapping[row[0]] = row[1].replace(tzinfo=datetime.timezone.utc)
         return mapping
 
     def create_new_manifests(self, current_manifests, bigquery_mappings):
@@ -243,21 +242,13 @@ class GCPReportDownloader(ReportDownloaderBase, DownloaderInterface):
             if (manifest_export_time and manifest_export_time != bigquery_et) or not manifest_export_time:
                 # if the manifest export time does not match bigquery we have new data
                 # for that partion time and new manifest should be created.
-                manifest_kwargs = {}
                 bill_date = bigquery_pd.replace(day=1)
                 invoice_month = bill_date.strftime("%Y%m")
                 file_name = f"{invoice_month}_{bigquery_pd}?{bigquery_et}.csv"
-                if manifest_export_time:
-                    manifest_kwargs["last_reports"] = {"last_export": manifest_export_time}
                 manifest_metadata = {
-                    "assembly_id": f"{bigquery_pd}:{bigquery_et}",
-                    "etag": hashlib.md5(str(f"{bigquery_pd}:{bigquery_et}").encode()).hexdigest(),
-                    "new_et": bigquery_et,
-                    "previous_et": manifest_export_time,
-                    "partition_date": bigquery_pd,
+                    "assembly_id": f"{bigquery_pd}|{bigquery_et}",
                     "bill_date": bill_date,
                     "files": [file_name],
-                    "kwargs": manifest_kwargs,
                 }
                 new_manifests.append(manifest_metadata)
         return new_manifests
@@ -286,7 +277,10 @@ class GCPReportDownloader(ReportDownloaderBase, DownloaderInterface):
         reports_list = []
         for manifest in new_manifest_list:
             manifest_id = self._process_manifest_db_record(
-                manifest["assembly_id"], manifest["bill_date"], len(manifest["files"]), dh._now, **manifest["kwargs"]
+                manifest["assembly_id"],
+                manifest["bill_date"],
+                len(manifest["files"]),
+                dh._now,
             )
             files_list = [
                 {"key": key, "local_file": self.get_local_file_for_report(key)} for key in manifest.get("files")
