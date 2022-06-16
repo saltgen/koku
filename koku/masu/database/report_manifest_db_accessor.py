@@ -231,7 +231,7 @@ class ReportManifestDBAccessor(KokuDBAccess):
         manifests = (
             CostUsageReportManifest.objects.filter(**filters).annotate(
                 partition_date=Cast(
-                    Func(F("assembly_id"), Value(":"), Value(1), function="split_part", output_field=DateField()),
+                    Func(F("assembly_id"), Value("|"), Value(1), function="split_part", output_field=DateField()),
                     output_field=DateField(),
                 )
             )
@@ -252,14 +252,14 @@ class ReportManifestDBAccessor(KokuDBAccess):
             CostUsageReportManifest.objects.filter(provider_id=provider_uuid)
             .annotate(
                 partition_date=Cast(
-                    Func(F("assembly_id"), Value(":"), Value(1), function="split_part", output_field=DateField()),
+                    Func(F("assembly_id"), Value("|"), Value(1), function="split_part", output_field=DateField()),
                     output_field=DateField(),
                 ),
                 previous_export_time=Cast(
-                    Func(F("assembly_id"), Value(":"), Value(2), function="split_part", output_field=DateTimeField()),
+                    Func(F("assembly_id"), Value("|"), Value(2), function="split_part", output_field=DateTimeField()),
                     output_field=DateTimeField(),
                 ),
             )
-            .filter(partition_date__gte=start_date, partion_date__lte=end_date)
+            .filter(partition_date__gte=start_date, partition_date__lte=end_date)
         )
         return manifests
