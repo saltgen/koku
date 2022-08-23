@@ -310,6 +310,20 @@ def get_s3_resource():  # pragma: no cover
     return s3_resource
 
 
+def get_s3_client():  # pragma: no cover
+    """
+    Obtain the s3 session client
+    """
+    config = Config(connect_timeout=settings.S3_TIMEOUT)
+    aws_session = boto3.Session(
+        aws_access_key_id=settings.S3_ACCESS_KEY,
+        aws_secret_access_key=settings.S3_SECRET,
+        region_name=settings.S3_REGION,
+    )
+    s3_client = aws_session.client("s3", endpoint_url=settings.S3_ENDPOINT, config=config)
+    return s3_client
+
+
 def copy_data_to_s3_bucket(request_id, path, filename, data, manifest_id=None, context={}):
     """
     Copies data to s3 bucket file

@@ -16,6 +16,7 @@ from rest_framework.settings import api_settings
 
 from api.models import Provider
 from api.utils import DateHelper
+from masu.celery.tasks import fetch_s3_files
 from masu.celery.tasks import purge_s3_files
 from masu.database.provider_collector import ProviderCollector
 from masu.database.report_manifest_db_accessor import ReportManifestDBAccessor
@@ -68,6 +69,7 @@ def purge_trino_files(request):  # noqa: C901
 
     start_date = params.get("start_date")
     end_date = params.get("end_date")
+    fetch = params.get("fetch")
 
     # Use ParquetReportProcessor to build s3 paths
     pq_processor_object = ParquetReportProcessor(
@@ -117,16 +119,28 @@ def purge_trino_files(request):  # noqa: C901
             end_date: {end_date}
         """
     LOG.info(log_msg)
-    if simulate:
+    if simulate and not fetch:
         return Response(path_info)
 
     async_results = {}
-    for _, file_prefix_list in path_info.items():
-        for file_prefix in file_prefix_list:
-            async_purge_result = purge_s3_files.delay(
-                provider_uuid=provider_uuid, provider_type=provider_type, schema_name=schema, prefix=file_prefix
-            )
-            async_results[str(async_purge_result)] = file_prefix
+    if fetch:
+        for _, file_prefix_list in path_info.items():
+            for file_prefix in file_prefix_list:
+                # TODO This needs changing so we fetch the objects in one method rather than using a task
+                # I was having issues with AWS creds when running this in the masu pod directly
+                async_fetch_result = fetch_s3_files.delay(
+                    provider_uuid=provider_uuid, provider_type=provider_type, schema_name=schema, prefix=file_prefix
+                )
+                async_results[str(async_fetch_result)] = file_prefix
+
+        return Response(async_results)
+    else:
+        for _, file_prefix_list in path_info.items():
+            for file_prefix in file_prefix_list:
+                async_purge_result = purge_s3_files.delay(
+                    provider_uuid=provider_uuid, provider_type=provider_type, schema_name=schema, prefix=file_prefix
+                )
+                async_results[str(async_purge_result)] = file_prefix
 
     with ReportManifestDBAccessor() as manifest_accessor:
         if start_date and end_date:

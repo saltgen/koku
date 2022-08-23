@@ -42,6 +42,7 @@ from masu.processor.tasks import DEFAULT
 from masu.processor.tasks import PRIORITY_QUEUE
 from masu.processor.tasks import REMOVE_EXPIRED_DATA_QUEUE
 from masu.prometheus_stats import QUEUES
+from masu.util.aws.common import get_s3_client
 from masu.util.aws.common import get_s3_resource
 from masu.util.ocp.common import REPORT_TYPES
 
@@ -63,6 +64,34 @@ def remove_expired_data(simulate=False):
     LOG.info("Removing expired data at %s", str(today))
     orchestrator = Orchestrator()
     orchestrator.remove_expired_report_data(simulate)
+
+
+@celery_app.task(name="masu.celery.tasks.fetch_trino_files", queue=DEFAULT)
+def fetch_s3_files(prefix, schema_name, provider_type, provider_uuid):
+    """Fetch files in a particular path prefix."""
+    LOG.info(f"fetch s3 files for schema: {schema_name}")
+    if not schema_name or not provider_type or not provider_uuid:
+        # Sanity-check all of these inputs to correctly fetch files
+        messages = []
+        if not schema_name:
+            message = "missing required argument: schema_name"
+            LOG.error(message)
+            messages.append(message)
+        if not provider_type:
+            message = "missing required argument: provider_type"
+            LOG.error(message)
+            messages.append(message)
+        if not provider_uuid:
+            message = "missing required argument: provider_uuid"
+            LOG.error(message)
+            messages.append(message)
+        raise TypeError("fetch_trino_files() %s", ", ".join(messages))
+
+    LOG.info("Attempting to fetch data in S3 under %s", prefix)
+    fetched_objects = fetch_s3_files_with_prefix(settings.S3_BUCKET_NAME, prefix)
+    if fetched_objects:
+        LOG.info(f"Found S3 objects {fetched_objects}")
+    return fetched_objects
 
 
 @celery_app.task(name="masu.celery.tasks.purge_trino_files", queue=DEFAULT)
@@ -106,6 +135,25 @@ def purge_s3_files(prefix, schema_name, provider_type, provider_uuid):
     remaining_objects = deleted_archived_with_prefix(settings.S3_BUCKET_NAME, prefix)
     LOG.info(f"Deletion complete. Remaining objects: {remaining_objects}")
     return remaining_objects
+
+
+def fetch_s3_files_with_prefix(s3_bucket_name, prefix):
+    """
+    fetch s3 data with given prefix.
+
+    Args:
+        s3_bucket_name (str): The s3 bucket name
+        prefix (str): The prefix for deletion
+        include (list):
+    """
+    s3_resource = get_s3_client()
+    list_objects = s3_resource.list_objects(Bucket=s3_bucket_name, Prefix=prefix)
+    file_list = []
+    if list_objects.get("Contents"):
+        for fn in list_objects["Contents"]:
+            file_list.append(fn["Key"])
+
+    return file_list
 
 
 def deleted_archived_with_prefix(s3_bucket_name, prefix, date_list=None):
