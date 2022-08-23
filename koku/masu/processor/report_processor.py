@@ -67,6 +67,7 @@ class ReportProcessor:
     def ocp_on_cloud_processor(self):
         """Return the OCP on Cloud processor if one is defined."""
         if self.trino_enabled and self.provider_type in Provider.OPENSHIFT_ON_CLOUD_PROVIDER_LIST:
+            # Well this is the only place the OCPCloudParquetReportProcessor class is called
             return OCPCloudParquetReportProcessor(
                 schema_name=self.schema_name,
                 report_path=self.report_path,
@@ -145,6 +146,8 @@ class ReportProcessor:
             )
         if self.provider_type in (Provider.PROVIDER_GCP, Provider.PROVIDER_GCP_LOCAL):
             return (
+                # What I think is happening. Since this processor is not getting reset defined.
+                # it thinks it is processing the same manifest over and over again.
                 GCPReportProcessor(
                     schema_name=self.schema_name,
                     report_path=self.report_path,
@@ -167,10 +170,19 @@ class ReportProcessor:
             (List) List of filenames downloaded.
 
         """
-        msg = f"Report processing started for {self.report_path}"
+        msg = f"Report processing started for CODY-CHECK {self.report_path}"
+        LOG.info(log_json(self.tracing_id, msg))
+        msg = f"Report processing started for LUKE-CHECK {self.manifest_id}"
         LOG.info(log_json(self.tracing_id, msg))
         try:
             if self.trino_enabled:
+                # What I think is happening.
+                # Note: So this is the only place I could find that calls the ocp on cloud processor.
+                # which means the parquet_base_filename must bubble up from GCPReportProcessor.process()
+                # LOG.info(f"manifest_id: {self.manifest_id}")
+                # LOG.info(f"report_file: {self.report_path}")
+                LOG.info("DIR")
+                LOG.info(dir(self))
                 parquet_base_filename, daily_data_frames = self._processor.process()
                 if self.ocp_on_cloud_processor:
                     self.ocp_on_cloud_processor.process(parquet_base_filename, daily_data_frames)

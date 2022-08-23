@@ -113,14 +113,21 @@ class OCPCloudParquetReportProcessor(ParquetReportProcessor):
             return self.parquet_ocp_on_cloud_path_s3
         return None
 
+    # Error is bubbling up here
     def create_ocp_on_cloud_parquet(self, data_frame, parquet_base_filename, file_number, ocp_provider_uuid):
         """Create a parquet file for daily aggregated data."""
         # Add the OCP UUID in case multiple clusters are running on this cloud source.
-        if self._provider_type == Provider.PROVIDER_GCP:
+        LOG.info(f"parquet based filename: {parquet_base_filename}")
+        LOG.info(f"self.ptype: {self._provider_type}")
+        if self._provider_type in [Provider.PROVIDER_GCP, Provider.PROVIDER_GCP_LOCAL]:
             if data_frame.first_valid_index() is not None:
                 parquet_base_filename = (
                     f"{data_frame['invoice_month'].values[0]}{parquet_base_filename[parquet_base_filename.find('_'):]}"
                 )
+            LOG.info("IF CONDITION HIT AND PARQUET BASE FILENAME RENAMED")
+        LOG.info(f"parquet based filename: {parquet_base_filename}")
+        LOG.info(f"file_number: {file_number}")
+        LOG.info(f"provider_uuid: {ocp_provider_uuid}")
         file_name = f"{parquet_base_filename}_{file_number}_{ocp_provider_uuid}{PARQUET_EXT}"
         file_path = f"{self.local_path}/{file_name}"
         self._write_parquet_to_file(file_path, file_name, data_frame, file_type=self.report_type)
@@ -167,6 +174,9 @@ class OCPCloudParquetReportProcessor(ParquetReportProcessor):
                             self.provider_uuid, ocp_provider_uuid, self.start_date, self.end_date
                         )
             for i, daily_data_frame in enumerate(daily_data_frames):
+                LOG.info("\n\n\n")
+                LOG.info(f"i: {i}")
+                LOG.info(f"daily_data_frame: {daily_data_frame}")
                 openshift_filtered_data_frame = self.ocp_on_cloud_data_processor(
                     daily_data_frame, cluster_topology, matched_tags
                 )
