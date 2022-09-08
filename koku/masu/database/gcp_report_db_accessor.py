@@ -480,6 +480,8 @@ class GCPReportDBAccessor(SQLScriptAtomicExecutorMixin, ReportDBAccessorBase):
         bill_id,
         markup_value,
         distribution,
+        node,
+        node_count,
     ):
         """Populate the daily cost aggregated summary for OCP on GCP.
 
@@ -529,6 +531,8 @@ class GCPReportDBAccessor(SQLScriptAtomicExecutorMixin, ReportDBAccessorBase):
             "cluster_column": cluster_column,
             "cluster_id": cluster_id,
             "cluster_alias": cluster_alias,
+            "node": node,
+            "node_count": node_count,
         }
         LOG.info("Running OCP on GCP SQL with params:")
         LOG.info(summary_sql_params)

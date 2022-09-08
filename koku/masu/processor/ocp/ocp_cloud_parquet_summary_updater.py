@@ -287,6 +287,12 @@ class OCPCloudParquetReportSummaryUpdater(OCPCloudReportSummaryUpdater):
             accessor.delete_infrastructure_raw_cost_from_daily_summary(
                 openshift_provider_uuid, report_period.id, start_date, end_date
             )
+
+            cluster_uuid = accessor.get_cluster_for_provider(openshift_provider_uuid)
+            nodes = accessor.get_nodes_for_cluster(cluster_uuid)
+            nodes = [node[0] for node in nodes]
+            node_count = len(nodes)
+
         gcp_bills = gcp_get_bills_from_provider(gcp_provider_uuid, self._schema, start_date, end_date)
         with schema_context(self._schema):
             self._handle_partitions(
@@ -345,17 +351,20 @@ class OCPCloudParquetReportSummaryUpdater(OCPCloudReportSummaryUpdater):
                 accessor.delete_line_item_daily_summary_entries_for_date_range_raw(
                     self._provider.uuid, start, end, filters, table=OCPGCPCostLineItemProjectDailySummaryP
                 )
-                accessor.populate_ocp_on_gcp_cost_daily_summary_presto(
-                    start,
-                    end,
-                    openshift_provider_uuid,
-                    cluster_id,
-                    gcp_provider_uuid,
-                    current_ocp_report_period_id,
-                    current_gcp_bill_id,
-                    markup_value,
-                    distribution,
-                )
+                for node in nodes:
+                    accessor.populate_ocp_on_gcp_cost_daily_summary_presto(
+                        start,
+                        end,
+                        openshift_provider_uuid,
+                        cluster_id,
+                        gcp_provider_uuid,
+                        current_ocp_report_period_id,
+                        current_gcp_bill_id,
+                        markup_value,
+                        distribution,
+                        node,
+                        node_count,
+                    )
             accessor.back_populate_ocp_on_gcp_daily_summary_trino(start_date, end_date, current_ocp_report_period_id)
             accessor.populate_ocp_on_gcp_ui_summary_tables(sql_params)
             accessor.populate_ocp_on_gcp_tags_summary_table(gcp_bill_ids, start_date, end_date)
