@@ -27,6 +27,8 @@ from reporting.provider.ocp.models import OCPEnabledTagKeys
 
 LOG = logging.getLogger(__name__)
 
+PARTITION_MAP = {"source": "varchar", "year": "varchar", "month": "varchar", "day": "varchar", "cluster": "varchar"}
+
 
 class OCPCloudParquetReportProcessor(ParquetReportProcessor):
     """Parquet report processor for OCP on Cloud infrastructure data."""
@@ -124,7 +126,7 @@ class OCPCloudParquetReportProcessor(ParquetReportProcessor):
         file_name = f"{parquet_base_filename}_{file_number}_{PARQUET_EXT}"
         file_path = f"{self.local_path}/{file_name}"
         self._write_parquet_to_file(file_path, file_name, data_frame, file_type=self.report_type)
-        self.create_parquet_table(file_path, daily=True)
+        self.create_parquet_table(file_path, daily=True, partition_map=PARTITION_MAP)
 
     def process(self, parquet_base_filename, daily_data_frames):
         """Filter data and convert to parquet."""
