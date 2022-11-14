@@ -2444,9 +2444,9 @@ class OCPReportDBAccessor(SQLScriptAtomicExecutorMixin, ReportDBAccessorBase):
             topology["persistent_volumes"] = [pvc[0] for pvc in pvc_tuple]
             topology["persistent_volume_claims"] = [pvc[1] for pvc in pvc_tuple]
             topology["projects"] = [project for project in project_tuple]
-        topology_list.append(topology)
+            topology_list.append(topology)
 
-        return topology
+        return topology_list
 
     def delete_infrastructure_raw_cost_from_daily_summary(self, provider_uuid, report_period_id, start_date, end_date):
         table_name = OCP_REPORT_TABLE_MAP["line_item_daily_summary"]
