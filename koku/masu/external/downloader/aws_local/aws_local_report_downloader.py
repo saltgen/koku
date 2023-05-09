@@ -35,28 +35,16 @@ class AWSLocalReportDownloader(ReportDownloaderBase, DownloaderInterface):
 
     empty_manifest = {"reportKeys": []}
 
-    def __init__(self, customer_name, credentials, data_source, report_name=None, **kwargs):
-        """
-        Constructor.
-
-        Args:
-            customer_name    (String) Name of the customer
-            credentials      (Dict) credentials credential for S3 bucket (RoleARN)
-            report_name      (String) Name of the Cost Usage Report to download (optional)
-            data_source      (Dict) Name of the S3 bucket containing the CUR
-
-        """
+    def __init__(self, **kwargs):
+        """Constructor."""
         super().__init__(**kwargs)
 
-        bucket = data_source.get("bucket")
+        bucket = kwargs["data_source"].get("bucket")
 
-        self.customer_name = customer_name.replace(" ", "_")
+        self.schema_name = kwargs["schema_name"].replace(" ", "_")
 
         LOG.debug("Connecting to local service provider...")
-        prefix, name = self._extract_names(bucket)
-
-        self.report_name = report_name if report_name else name
-        self.report_prefix = prefix
+        self.report_prefix, self.report_name = self._extract_names(bucket)
 
         msg = f"Found report name: {self.report_name}, report prefix: {self.report_prefix}"
         LOG.info(log_json(self.tracing_id, msg, self.context))
@@ -66,7 +54,6 @@ class AWSLocalReportDownloader(ReportDownloaderBase, DownloaderInterface):
             self.base_path = bucket
         self.bucket_path = bucket
         self.bucket = bucket.replace("/", "_")
-        self.credential = credentials
 
     @property
     def manifest_date_format(self):
@@ -212,7 +199,7 @@ class AWSLocalReportDownloader(ReportDownloaderBase, DownloaderInterface):
         """
         local_s3_filename = utils.get_local_file_name(key)
 
-        directory_path = f"{DATA_DIR}/{self.customer_name}/aws-local/{self.bucket}"
+        directory_path = f"{DATA_DIR}/{self.schema_name}/aws-local/{self.bucket}"
         full_file_path = f"{directory_path}/{local_s3_filename}"
 
         if not os.path.isfile(key):

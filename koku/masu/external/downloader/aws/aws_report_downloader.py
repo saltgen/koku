@@ -47,12 +47,11 @@ class AWSReportDownloader(ReportDownloaderBase, DownloaderInterface):
 
     empty_manifest = {"reportKeys": []}
 
-    def __init__(self, customer_name, credentials, data_source, report_name=None, ingress_reports=None, **kwargs):
+    def __init__(self, credentials, data_source, report_name=None, ingress_reports=None, **kwargs):
         """
         Constructor.
 
         Args:
-            customer_name    (String) Name of the customer
             credentials   (Dict) credentials credential for S3 bucket (RoleARN)
             data_source (Dict) Billing source data like bucket
             report_name      (String) Name of the Cost Usage Report to download (optional)
@@ -60,33 +59,27 @@ class AWSReportDownloader(ReportDownloaderBase, DownloaderInterface):
 
         """
         super().__init__(**kwargs)
+        self.s3_schema = kwargs["s3_schema"].replace(" ", "_")
+        self._provider_uuid = kwargs["provider_uuid"]
 
         arn = credentials.get("role_arn")
         bucket = data_source.get("bucket")
         self.bucket = bucket
         self.storage_only = data_source.get("storage_only")
         self.ingress_reports = ingress_reports
-        # Existing schema will start with acct and we strip that prefix new customers
-        # include the org prefix in case an org-id and an account number might overlap
-        if customer_name.startswith("acct"):
-            demo_check = customer_name[4:]
-        else:
-            demo_check = customer_name
-        if demo_check in settings.DEMO_ACCOUNTS:
-            demo_account = settings.DEMO_ACCOUNTS.get(demo_check)
-            LOG.info(f"Info found for demo account {demo_check} = {demo_account}.")
+
+        if self.s3_schema in settings.DEMO_ACCOUNTS:
+            demo_account = settings.DEMO_ACCOUNTS.get(self.s3_schema)
+            LOG.info(f"Info found for demo account {self.s3_schema} = {demo_account}.")
             if arn in demo_account:
                 demo_info = demo_account.get(arn)
-                self.customer_name = customer_name.replace(" ", "_")
+
                 self._provider_uuid = kwargs.get("provider_uuid")
                 self.report_name = demo_info.get("report_name")
                 self.report = {"S3Bucket": bucket, "S3Prefix": demo_info.get("report_prefix"), "Compression": "GZIP"}
                 session = utils.get_assume_role_session(utils.AwsArn(arn), "MasuDownloaderSession")
                 self.s3_client = session.client("s3")
                 return
-
-        self.customer_name = customer_name.replace(" ", "_")
-        self._provider_uuid = kwargs.get("provider_uuid")
 
         LOG.debug("Connecting to AWS...")
         session = utils.get_assume_role_session(utils.AwsArn(arn), "MasuDownloaderSession")
@@ -242,7 +235,7 @@ class AWSReportDownloader(ReportDownloaderBase, DownloaderInterface):
             key = key.split(f"{self.bucket}/")[-1]
 
         s3_filename = key.split("/")[-1]
-        directory_path = f"{DATA_DIR}/{self.customer_name}/aws/{self.bucket}"
+        directory_path = f"{DATA_DIR}/{self.s3_schema}/aws/{self.bucket}"
 
         local_s3_filename = utils.get_local_file_name(key)
         msg = f"Local S3 filename: {local_s3_filename}"

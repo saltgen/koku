@@ -39,11 +39,11 @@ from masu.exceptions import MasuProviderError
 from masu.external.accounts_accessor import AccountsAccessor
 from masu.external.accounts_accessor import AccountsAccessorError
 from masu.external.downloader.report_downloader_base import ReportDownloaderWarning
+from masu.external.report_downloader import ReportDownloader
 from masu.external.report_downloader import ReportDownloaderError
 from masu.processor import disable_ocp_on_cloud_summary
 from masu.processor import disable_summary_processing
 from masu.processor import is_large_customer
-from masu.processor._tasks.download import _get_report_files
 from masu.processor._tasks.process import _process_report_file
 from masu.processor._tasks.remove_expired import _remove_expired_data
 from masu.processor.cost_model_cost_updater import CostModelCostUpdater
@@ -139,95 +139,57 @@ def record_report_status(manifest_id, file_name, tracing_id, context={}):
 @celery_app.task(name="masu.processor.tasks.get_report_files", queue=GET_REPORT_FILES_QUEUE, bind=True)  # noqa: C901
 def get_report_files(  # noqa: C901
     self,
-    customer_name,
-    authentication,
-    billing_source,
-    provider_type,
-    schema_name,
-    provider_uuid,
-    report_month,
+    account_info,
     report_context,
     tracing_id,
     ingress_reports=None,
     ingress_reports_uuid=None,
 ):
-    """
-    Task to download a Report and process the report.
+    """Task to download a Report and process the report."""
+    schema_name = account_info["schema_name"]
+    provider_type = account_info["provider_type"]
+    provider_uuid = account_info["provider_uuid"]
 
-    FIXME: A 2 hour timeout is arbitrarily set for in progress processing requests.
-    Once we know a realistic processing time for the largest CUR file in production
-    this value can be adjusted or made configurable.
+    context = {
+        "schema_name": schema_name,
+        "provider_type": provider_type,
+        "provider_uuid": provider_uuid,
+    }
 
-    Args:
-        customer_name     (String): Name of the customer owning the cost usage report.
-        authentication    (String): Credential needed to access cost usage report
-                                    in the backend provider.
-        billing_source    (String): Location of the cost usage report in the backend provider.
-        provider_type     (String): Koku defined provider type string.  Example: Amazon = 'AWS'
-        schema_name       (String): Name of the DB schema
-
-    Returns:
-        None
-
-    """
-    # Existing schema will start with acct and we strip that prefix for use later
-    # new customers include the org prefix in case an org-id and an account number might overlap
-    context = {}
-    if customer_name.startswith("acct"):
-        context["account"] = customer_name[4:]
-    else:
-        context["org_id"] = customer_name[3:]
-    context["provider_uuid"] = provider_uuid
     try:
         worker_stats.GET_REPORT_ATTEMPTS_COUNTER.labels(provider_type=provider_type).inc()
-        month = report_month
-        if isinstance(report_month, str):
-            month = parser.parse(report_month)
+        month = report_context["report_month"]
+        if isinstance(month, str):
+            report_context["report_month"] = parser.parse(month)
         report_file = report_context.get("key")
         cache_key = f"{provider_uuid}:{report_file}"
         WorkerCache().add_task_to_cache(cache_key)
 
         try:
-            report_dict = _get_report_files(
-                tracing_id,
-                customer_name,
-                authentication,
-                billing_source,
-                provider_type,
-                provider_uuid,
-                month,
-                report_context,
-                ingress_reports,
+            LOG.info(log_json(tracing_id, "downloading report", context))
+            downloader = ReportDownloader(
+                account_info=account_info,
+                ingress_reports=ingress_reports,
+                tracing_id=tracing_id,
             )
+            report_dict = downloader.download_report(report_context)
+
         except (MasuProcessingError, MasuProviderError, ReportDownloaderError) as err:
             worker_stats.REPORT_FILE_DOWNLOAD_ERROR_COUNTER.labels(provider_type=provider_type).inc()
             WorkerCache().remove_task_from_cache(cache_key)
             LOG.warning(log_json(tracing_id, str(err), context))
             return
 
-        stmt = (
-            f"Reports to be processed: "
-            f" schema_name: {customer_name} "
-            f" provider: {provider_type} "
-            f" provider_uuid: {provider_uuid}"
-        )
-        if report_dict:
-            stmt += f" file: {report_dict['file']}"
-            if provider_type in [Provider.PROVIDER_GCP, Provider.PROVIDER_GCP_LOCAL] and report_dict.get(
-                "invoice_month"
-            ):
-                stmt += f" Invoice_month: {report_dict['invoice_month']}"
-            LOG.info(log_json(tracing_id, stmt, context))
-        else:
+        if not report_dict:
             WorkerCache().remove_task_from_cache(cache_key)
-            stmt = (
-                f"No report to be processed: "
-                f" schema_name: {customer_name} "
-                f" provider: {provider_type} "
-                f" provider_uuid: {provider_uuid}"
-            )
-            LOG.info(log_json(tracing_id, stmt, context))
+            LOG.info(log_json(tracing_id, "no reports to process", context))
             return
+
+        context["file"] = report_dict["file"]
+        if report_dict.get("invoice_month"):
+            context["invoice_month"] = report_dict["invoice_month"]
+
+        LOG.info(log_json(tracing_id, "report to be processed", context))
 
         report_meta = {
             "schema_name": schema_name,
@@ -241,22 +203,10 @@ def get_report_files(  # noqa: C901
         }
 
         try:
-            stmt = (
-                f"Processing starting: "
-                f" schema_name: {customer_name} "
-                f" provider: {provider_type} "
-                f" provider_uuid: {provider_uuid} "
-                f' file: {report_dict.get("file")}'
-            )
-            LOG.info(log_json(tracing_id, stmt))
+            LOG.info(log_json(tracing_id, "starting processing", context))
             worker_stats.PROCESS_REPORT_ATTEMPTS_COUNTER.labels(provider_type=provider_type).inc()
 
-            report_dict["tracing_id"] = tracing_id
-            report_dict["provider_type"] = provider_type
-
-            result = _process_report_file(
-                schema_name, provider_type, report_dict, ingress_reports, ingress_reports_uuid
-            )
+            result = _process_report_file(tracing_id, schema_name, report_dict, ingress_reports, ingress_reports_uuid)
 
         except (ReportProcessorError, ReportProcessorDBError) as processing_error:
             worker_stats.PROCESS_REPORT_ERROR_COUNTER.labels(provider_type=provider_type).inc()

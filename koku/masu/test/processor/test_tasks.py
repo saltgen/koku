@@ -34,7 +34,6 @@ from api.iam.models import Tenant
 from api.models import Provider
 from api.utils import DateHelper
 from koku.middleware import KokuTenantMiddleware
-from masu.config import Config
 from masu.database import AWS_CUR_TABLE_MAP
 from masu.database import OCP_REPORT_TABLE_MAP
 from masu.database.aws_report_db_accessor import AWSReportDBAccessor
@@ -47,7 +46,6 @@ from masu.exceptions import MasuProcessingError
 from masu.exceptions import MasuProviderError
 from masu.external.downloader.report_downloader_base import ReportDownloaderWarning
 from masu.external.report_downloader import ReportDownloaderError
-from masu.processor._tasks.download import _get_report_files
 from masu.processor._tasks.process import _process_report_file
 from masu.processor.expired_data_remover import ExpiredDataRemover
 from masu.processor.report_processor import ReportProcessorError
@@ -74,7 +72,6 @@ from masu.processor.tasks import update_summary_tables
 from masu.processor.tasks import vacuum_schema
 from masu.processor.worker_cache import create_single_task_cache_key
 from masu.test import MasuTestCase
-from masu.test.external.downloader.aws import fake_arn
 from reporting.ingress.models import IngressReports
 from reporting_common.models import CostUsageReportManifest
 from reporting_common.models import CostUsageReportStatus
@@ -90,95 +87,6 @@ class FakeDownloader(Mock):
             "/var/tmp/masu/other-report-name/aws/other-report-file.csv",
         ]
         return fake_file_list
-
-
-class GetReportFileTests(MasuTestCase):
-    """Test Cases for the celery task."""
-
-    fake = faker.Faker()
-
-    @patch("masu.processor._tasks.download.ReportDownloader", return_value=FakeDownloader)
-    def test_get_report(self, fake_downloader):
-        """Test task."""
-        account = fake_arn(service="iam", generate_account_id=True)
-        report = _get_report_files(
-            Mock(),
-            customer_name=self.fake.word(),
-            authentication=account,
-            provider_type=Provider.PROVIDER_AWS,
-            report_month=DateHelper().today,
-            provider_uuid=self.aws_provider_uuid,
-            billing_source=self.fake.word(),
-            report_context={},
-        )
-
-        self.assertIsInstance(report, list)
-        self.assertGreater(len(report), 0)
-
-    @patch("masu.processor._tasks.download.ReportDownloader", return_value=FakeDownloader)
-    def test_disk_status_logging(self, fake_downloader):
-        """Test task for logging when temp directory exists."""
-        logging.disable(logging.NOTSET)
-        os.makedirs(Config.TMP_DIR, exist_ok=True)
-
-        account = fake_arn(service="iam", generate_account_id=True)
-        expected = "Available disk space"
-        with self.assertLogs("masu.processor._tasks.download", level="INFO") as logger:
-            _get_report_files(
-                Mock(),
-                customer_name=self.fake.word(),
-                authentication=account,
-                provider_type=Provider.PROVIDER_AWS,
-                report_month=DateHelper().today,
-                provider_uuid=self.aws_provider_uuid,
-                billing_source=self.fake.word(),
-                report_context={},
-            )
-            statement_found = any(expected in log for log in logger.output)
-            self.assertTrue(statement_found)
-
-        shutil.rmtree(Config.TMP_DIR, ignore_errors=True)
-
-    @patch("masu.processor._tasks.download.ReportDownloader", return_value=FakeDownloader)
-    def test_disk_status_logging_no_dir(self, fake_downloader):
-        """Test task for logging when temp directory does not exist."""
-        logging.disable(logging.NOTSET)
-
-        Config.DATA_DIR = "/this/path/does/not/exist"
-
-        account = fake_arn(service="iam", generate_account_id=True)
-        expected = "Unable to find" + f" available disk space. {Config.DATA_DIR} does not exist"
-        with self.assertLogs("masu.processor._tasks.download", level="INFO") as logger:
-            _get_report_files(
-                Mock(),
-                customer_name=self.fake.word(),
-                authentication=account,
-                provider_type=Provider.PROVIDER_AWS,
-                report_month=DateHelper().today,
-                provider_uuid=self.aws_provider_uuid,
-                billing_source=self.fake.word(),
-                report_context={},
-            )
-            statement_found = any(expected in log for log in logger.output)
-            self.assertTrue(statement_found)
-
-    @patch("masu.processor.worker_cache.CELERY_INSPECT")
-    @patch("masu.processor._tasks.download.ReportDownloader._set_downloader", side_effect=Exception("only a test"))
-    def test_get_report_task_exception(self, fake_downloader, mock_inspect):
-        """Test task."""
-        account = fake_arn(service="iam", generate_account_id=True)
-
-        with self.assertRaises(Exception):
-            _get_report_files(
-                Mock(),
-                customer_name=self.fake.word(),
-                authentication=account,
-                provider_type=Provider.PROVIDER_AWS,
-                report_month=DateHelper().today,
-                provider_uuid=uuid4(),
-                billing_source=self.fake.word(),
-                report_context={},
-            )
 
 
 class ProcessReportFileTests(MasuTestCase):
@@ -444,25 +352,35 @@ class TestProcessorTasks(MasuTestCase):
         self.test_assembly_id = "882083b7-ea62-4aab-aa6a-f0d08d65ee2b"
         self.test_etag = "fake_etag"
         self.get_report_args = {
-            "customer_name": self.schema,
-            "authentication": self.aws_provider.authentication.credentials,
-            "provider_type": Provider.PROVIDER_AWS_LOCAL,
-            "schema_name": self.schema,
-            "billing_source": self.aws_provider.billing_source.data_source,
-            "provider_uuid": self.aws_provider_uuid,
-            "report_month": DateHelper().today,
-            "report_context": {"current_file": f"/my/{self.test_assembly_id}/koku-1.csv.gz"},
+            "account_info": {
+                "schema_name": self.schema,
+                "credentials": self.aws_provider.authentication.credentials,
+                "provider_type": Provider.PROVIDER_AWS_LOCAL,
+                "data_source": self.aws_provider.billing_source.data_source,
+                "provider_uuid": self.aws_provider_uuid,
+                "account_id": self.acct,
+                "org_id": self.org,
+            },
+            "report_context": {
+                "current_file": f"/my/{self.test_assembly_id}/koku-1.csv.gz",
+                "report_month": DateHelper().today,
+            },
             "tracing_id": "my-totally-made-up-id",
         }
         self.get_report_args_gcp = {
-            "customer_name": self.schema,
-            "authentication": self.gcp_provider.authentication.credentials,
-            "provider_type": Provider.PROVIDER_GCP_LOCAL,
-            "schema_name": self.schema,
-            "billing_source": self.gcp_provider.billing_source.data_source,
-            "provider_uuid": self.gcp_provider_uuid,
-            "report_month": DateHelper().today,
-            "report_context": {"current_file": f"/my/{self.test_assembly_id}/koku-1.csv.gz"},
+            "account_info": {
+                "schema_name": self.schema,
+                "credentials": self.gcp_provider.authentication.credentials,
+                "provider_type": Provider.PROVIDER_GCP_LOCAL,
+                "data_source": self.gcp_provider.billing_source.data_source,
+                "provider_uuid": self.gcp_provider_uuid,
+                "account_id": self.acct,
+                "org_id": self.org,
+            },
+            "report_context": {
+                "current_file": f"/my/{self.test_assembly_id}/koku-1.csv.gz",
+                "report_month": DateHelper().today,
+            },
             "tracing_id": "my-totally-made-up-id",
         }
 
@@ -475,7 +393,7 @@ class TestProcessorTasks(MasuTestCase):
         for exception in exceptions:
             with self.subTest(exception=exception):
                 with patch(
-                    "masu.processor.tasks._get_report_files", side_effect=exception("Mocked exception!")
+                    "masu.processor.tasks.ReportDownloader.download_report", side_effect=exception("Mocked exception!")
                 ) as mock_get_files:
                     get_report_files(**self.get_report_args)
                     mock_get_files.assert_called()

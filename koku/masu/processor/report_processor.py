@@ -34,7 +34,7 @@ class ReportProcessor:
         schema_name,
         report_path,
         compression,
-        provider,
+        provider_type,
         provider_uuid,
         manifest_id,
         context=None,
@@ -45,7 +45,7 @@ class ReportProcessor:
         self.schema_name = schema_name
         self.report_path = report_path
         self.compression = compression
-        self.provider_type = provider
+        self.provider_type = provider_type
         self.provider_uuid = provider_uuid
         self.manifest_id = manifest_id
         self.context = context

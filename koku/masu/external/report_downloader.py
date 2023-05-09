@@ -34,38 +34,27 @@ LOG = logging.getLogger(__name__)
 class ReportDownloader:
     """Interface for masu to use to get CUR accounts."""
 
-    def __init__(
-        self,
-        customer_name,
-        credentials,
-        data_source,
-        provider_type,
-        provider_uuid,
-        report_name=None,
-        account=None,
-        ingress_reports=None,
-        tracing_id="no_tracing_id",
-    ):
+    def __init__(self, account_info, ingress_reports=None, tracing_id="no_tracing_id"):
         """Set the downloader based on the backend cloud provider."""
-        self.customer_name = customer_name
-        self.credentials = credentials
-        self.data_source = data_source
-        self.report_name = report_name
-        self.provider_type = provider_type
-        self.provider_uuid = provider_uuid
+        self.credentials = account_info["credentials"]
+        self.data_source = account_info["data_source"]
+        self.provider_type = account_info["provider_type"]
+        self.provider_uuid = account_info["provider_uuid"]
+        self.schema_name = account_info["schema_name"]
         self.tracing_id = tracing_id
         self.request_id = tracing_id  # TODO: Remove this once the downloaders have been updated
-        self.account = account
         self.ingress_reports = ingress_reports
-        if self.account is None:
-            # Existing schema will start with acct and we strip that prefix for use later
-            # new customers include the org prefix in case an org-id and an account number might overlap
-            self.account = customer_name.strip("acct")
+
+        # Existing schema will start with acct and we strip that prefix for use later
+        # new customers include the org prefix in case an org-id and an account number might overlap
+        self.account = self.schema_name.strip("acct")
+
         self.context = {
             "tracing_id": self.tracing_id,
             "provider_uuid": self.provider_uuid,
             "provider_type": self.provider_type,
-            "account": self.account,
+            "account_id": account_info["account_id"],
+            "org_id": account_info["org_id"],
         }
 
         try:
@@ -105,13 +94,11 @@ class ReportDownloader:
         }
         if self.provider_type in downloader_map:
             return downloader_map[self.provider_type](
-                customer_name=self.customer_name,
                 credentials=self.credentials,
                 data_source=self.data_source,
-                report_name=self.report_name,
                 provider_uuid=self.provider_uuid,
                 tracing_id=self.tracing_id,
-                account=self.account,
+                s3_schema=self.account,
                 provider_type=self.provider_type,
                 ingress_reports=self.ingress_reports,
             )
@@ -172,7 +159,7 @@ class ReportDownloader:
             ([{}]) List of dictionaries containing file path and compression.
 
         """
-        date_time = report_context.get("date")
+        date_time = report_context.get("report_month")
         msg = f"Attempting to get {self.provider_type} manifest for {str(date_time)}."
         LOG.info(log_json(self.tracing_id, msg, self.context))
 
@@ -206,6 +193,7 @@ class ReportDownloader:
             "assembly_id": report_context.get("assembly_id"),
             "manifest_id": manifest_id,
             "provider_uuid": self.provider_uuid,
+            "provider_type": self.provider_type,
             "create_table": report_context.get("create_table", False),
             "start": date_range.get("start"),
             "end": date_range.get("end"),

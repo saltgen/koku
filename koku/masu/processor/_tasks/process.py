@@ -18,7 +18,7 @@ from masu.processor.report_processor import ReportProcessorError
 LOG = logging.getLogger(__name__)
 
 
-def _process_report_file(schema_name, provider, report_dict, ingress_reports=None, ingress_reports_uuid=None):
+def _process_report_file(tracing_id, schema_name, report_dict, ingress_reports=None, ingress_reports_uuid=None):
     """
     Task to process a Report.
 
@@ -36,11 +36,11 @@ def _process_report_file(schema_name, provider, report_dict, ingress_reports=Non
     compression = report_dict.get("compression")
     manifest_id = report_dict.get("manifest_id")
     provider_uuid = report_dict.get("provider_uuid")
-    tracing_id = report_dict.get("tracing_id")
+    provider_type = report_dict.get("provider_type")
     log_statement = (
         f"Processing Report: "
         f" schema_name: {schema_name} "
-        f" provider: {provider} "
+        f" provider: {provider_type} "
         f" provider_uuid: {provider_uuid} "
         f" file: {report_path} "
         f" compression: {compression} "
@@ -60,7 +60,7 @@ def _process_report_file(schema_name, provider, report_dict, ingress_reports=Non
             schema_name=schema_name,
             report_path=report_path,
             compression=compression,
-            provider=provider,
+            provider_type=provider_type,
             provider_uuid=provider_uuid,
             manifest_id=manifest_id,
             context=report_dict,
