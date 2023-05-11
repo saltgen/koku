@@ -35,13 +35,12 @@ class AWSLocalReportDownloader(ReportDownloaderBase, DownloaderInterface):
 
     empty_manifest = {"reportKeys": []}
 
-    def __init__(self, **kwargs):
+    def __init__(self, credentials, data_source, **kwargs):
         """Constructor."""
         super().__init__(**kwargs)
+        self.s3_schema = kwargs["s3_schema"].replace(" ", "_")
 
-        bucket = kwargs["data_source"].get("bucket")
-
-        self.schema_name = kwargs["schema_name"].replace(" ", "_")
+        bucket = data_source.get("bucket")
 
         LOG.debug("Connecting to local service provider...")
         self.report_prefix, self.report_name = self._extract_names(bucket)
@@ -199,7 +198,7 @@ class AWSLocalReportDownloader(ReportDownloaderBase, DownloaderInterface):
         """
         local_s3_filename = utils.get_local_file_name(key)
 
-        directory_path = f"{DATA_DIR}/{self.schema_name}/aws-local/{self.bucket}"
+        directory_path = f"{DATA_DIR}/{self.s3_schema}/aws-local/{self.bucket}"
         full_file_path = f"{directory_path}/{local_s3_filename}"
 
         if not os.path.isfile(key):

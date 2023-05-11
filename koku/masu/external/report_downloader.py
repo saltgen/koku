@@ -47,7 +47,7 @@ class ReportDownloader:
 
         # Existing schema will start with acct and we strip that prefix for use later
         # new customers include the org prefix in case an org-id and an account number might overlap
-        self.account = self.schema_name.strip("acct")
+        self.s3_schema = self.schema_name.strip("acct")
 
         self.context = {
             "tracing_id": self.tracing_id,
@@ -98,7 +98,7 @@ class ReportDownloader:
                 data_source=self.data_source,
                 provider_uuid=self.provider_uuid,
                 tracing_id=self.tracing_id,
-                s3_schema=self.account,
+                s3_schema=self.s3_schema,
                 provider_type=self.provider_type,
                 ingress_reports=self.ingress_reports,
             )
