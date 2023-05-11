@@ -136,7 +136,7 @@ def record_report_status(manifest_id, file_name, tracing_id, context={}):
     return already_processed
 
 
-@celery_app.task(name="masu.processor.tasks.get_report_files", queue=GET_REPORT_FILES_QUEUE, bind=True)  # noqa: C901
+@celery_app.task(name="masu.processor.tasks.get_report_files", queue=GET_REPORT_FILES_QUEUE, bind=True)
 def get_report_files(  # noqa: C901
     self,
     customer_name,
@@ -388,7 +388,7 @@ def summarize_reports(reports_to_summarize, queue_name=None, manifest_list=None,
                     ).apply_async(queue=queue_name or UPDATE_SUMMARY_TABLES_QUEUE)
 
 
-@celery_app.task(name="masu.processor.tasks.update_summary_tables", queue=UPDATE_SUMMARY_TABLES_QUEUE)  # noqa: C901
+@celery_app.task(name="masu.processor.tasks.update_summary_tables", queue=UPDATE_SUMMARY_TABLES_QUEUE)
 def update_summary_tables(  # noqa: C901
     schema_name,
     provider,
@@ -601,7 +601,7 @@ def update_summary_tables(  # noqa: C901
         worker_cache.release_single_task(task_name, cache_args)
 
 
-@celery_app.task(name="masu.processor.tasks.delete_openshift_on_cloud_data", queue=DELETE_TRUNCATE_QUEUE)  # noqa: C901
+@celery_app.task(name="masu.processor.tasks.delete_openshift_on_cloud_data", queue=DELETE_TRUNCATE_QUEUE)
 def delete_openshift_on_cloud_data(
     schema_name,
     infrastructure_provider_uuid,
@@ -826,11 +826,11 @@ def update_cost_model_costs(
 
 
 # fmt: off
-@celery_app.task(  # noqa: C901
+@celery_app.task(
     name="masu.processor.tasks.mark_manifest_complete", queue=MARK_MANIFEST_COMPLETE_QUEUE
 )
 # fmt: on
-def mark_manifest_complete(  # noqa: C901
+def mark_manifest_complete(
     schema_name,
     provider_type,
     provider_uuid="",
@@ -904,7 +904,7 @@ def normalize_table_options(table_options):
 # At this time, no table parameter will be lowered past the known production engine
 # setting of 0.2 by default. However this function's settings can be overridden via the
 # AUTOVACUUM_TUNING environment variable. See below.
-@celery_app.task(name="masu.processor.tasks.autovacuum_tune_schema", queue_name=DEFAULT)  # noqa: C901
+@celery_app.task(name="masu.processor.tasks.autovacuum_tune_schema", queue_name=DEFAULT)
 def autovacuum_tune_schema(schema_name):  # noqa: C901
     """Set the autovacuum table settings based on table size for the specified schema."""
     table_sql = """

@@ -361,7 +361,7 @@ class AWSReportQueryHandler(ReportQueryHandler):
                 filt["field"] = "organizational_unit__org_unit_id"
         super().set_access_filters(access, filt, filters)
 
-    def total_sum(self, sum1, sum2):  # noqa: C901
+    def total_sum(self, sum1, sum2):
         """
         Given two sums, add the values of identical keys.
         Args:
@@ -379,7 +379,7 @@ class AWSReportQueryHandler(ReportQueryHandler):
                     sum2[expected_key] = self.total_sum(sum1.get(expected_key), sum2.get(expected_key))
         return sum2
 
-    def execute_individual_query(self, org_unit_applied=False):  # noqa: C901
+    def execute_individual_query(self, org_unit_applied=False):
         """Execute query and return provided data.
 
         Returns:

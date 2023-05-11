@@ -19,8 +19,6 @@ from koku.database import dbfunc_exists
 from koku.migration_sql_helpers import apply_sql_file
 from koku.migration_sql_helpers import find_db_functions_dir
 
-# import pkgutil
-
 
 LOG = logging.getLogger(__name__)
 

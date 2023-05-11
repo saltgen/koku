@@ -256,7 +256,7 @@ def listen_for_messages_loop(application_source_id):  # pragma: no cover
         execute_process_queue()
 
 
-@KAFKA_CONNECTION_ERRORS_COUNTER.count_exceptions()  # noqa: C901
+@KAFKA_CONNECTION_ERRORS_COUNTER.count_exceptions()
 def listen_for_messages(kaf_msg, consumer, application_source_id):  # noqa: C901
     """
     Listen for Platform-Sources kafka messages.

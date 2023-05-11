@@ -393,7 +393,7 @@ class ParquetReportProcessor:
 
         return processor
 
-    def convert_to_parquet(self):  # noqa: C901
+    def convert_to_parquet(self):
         """
         Convert archived CSV data from our S3 bucket for a given provider to Parquet.
 

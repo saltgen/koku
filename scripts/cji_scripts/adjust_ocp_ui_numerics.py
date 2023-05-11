@@ -74,7 +74,7 @@ def alter_partable(conn, partable):
         _execute(conn, sql)
 
 
-def process_ocp_partables(conn, partables):  # noqa
+def process_ocp_partables(conn, partables):
     LOG.info("This script is part of Jira ticket COST-1976 https://issues.redhat.com/browse/COST-1976")
     LOG.info("This script is speficically for sub-task COST-1979 https://issues.redhat.com/browse/COST-1979")
 

@@ -772,7 +772,7 @@ class ReportQueryHandler(QueryHandler):
             prefix_mapping[AWS_CATEGORY_PREFIX] = aws_category_column
         for prefix, db_column in prefix_mapping.items():
             if group.startswith(db_column + "__"):
-                group = group[len(db_column + "__") :]  # noqa
+                group = group[len(db_column + "__") :]
                 check_pack_prefix = prefix
         if check_pack_prefix and group in all_pack_keys:
             group = check_pack_prefix + group

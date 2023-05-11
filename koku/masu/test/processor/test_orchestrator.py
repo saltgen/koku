@@ -76,7 +76,7 @@ class OrchestratorTest(MasuTestCase):
             },
         ]
 
-    @patch("masu.processor.worker_cache.CELERY_INSPECT")  # noqa: C901
+    @patch("masu.processor.worker_cache.CELERY_INSPECT")
     def test_initializer(self, mock_inspect):  # noqa: C901
         """Test to init."""
         orchestrator = Orchestrator()

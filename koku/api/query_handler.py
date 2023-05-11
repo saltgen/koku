@@ -196,7 +196,7 @@ class QueryHandler:
             (Boolean): True if they keys given appear in given query parameters.
 
         """
-        return self.parameters and key in self.parameters and in_key in self.parameters.get(key)  # noqa: W504
+        return self.parameters and key in self.parameters and in_key in self.parameters.get(key)
 
     def get_time_scope_units(self):
         """Extract time scope units or provide default.
@@ -358,7 +358,7 @@ class QueryHandler:
             filters.add(**conditional_filter)
         return filters
 
-    def filter_to_order_by(self, parameters):  # noqa: C901
+    def filter_to_order_by(self, parameters):
         """Remove group_by[NAME]=* and replace it with group_by[NAME]=X.
 
         The parameters object contains a list of filters and a list of group_bys.
