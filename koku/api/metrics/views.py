@@ -22,7 +22,7 @@ from api.metrics import constants as metric_constants
 from api.metrics.serializers import QueryParamsSerializer
 
 
-@api_view(["GET"])  # noqa: C901
+@api_view(["GET"])
 @permission_classes((permissions.AllowAny,))
 @renderer_classes([JSONRenderer] + api_settings.DEFAULT_RENDERER_CLASSES)
 @vary_on_headers(CACHE_RH_IDENTITY_HEADER)

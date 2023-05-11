@@ -157,7 +157,7 @@ class GCPReportQueryHandler(ReportQueryHandler):
             self._pack_data_object(query_sum, **self._mapper.PACK_DEFINITIONS)
         return query_sum
 
-    def execute_query(self):  # noqa: C901
+    def execute_query(self):
         """Execute query and return provided data.
 
         Returns:

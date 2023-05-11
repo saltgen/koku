@@ -90,7 +90,7 @@ class BigQueryHelper:
 @api_view(http_method_names=["GET", "POST"])
 @permission_classes((AllowAny,))
 @renderer_classes(tuple(api_settings.DEFAULT_RENDERER_CLASSES))
-def bigquery_cost(request):  # noqa: C901
+def bigquery_cost(request):
     """Returns the invoice monthly cost."""
     params = request.query_params
     provider_uuid = params.get("provider_uuid")

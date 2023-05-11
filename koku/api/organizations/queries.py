@@ -101,7 +101,7 @@ class OrgQueryHandler(QueryHandler):
         output["data"] = self.query_data
         return output
 
-    def _get_filter(self, delta=False):  # noqa: C901
+    def _get_filter(self, delta=False):
         """Create dictionary for filter parameters.
 
         Args:

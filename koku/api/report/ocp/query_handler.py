@@ -168,7 +168,7 @@ class OCPReportQueryHandler(ReportQueryHandler):
 
         return output
 
-    def execute_query(self):  # noqa: C901
+    def execute_query(self):
         """Execute query and return provided data.
 
         Returns:

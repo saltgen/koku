@@ -69,7 +69,7 @@ class Forecast:
 
     REPORT_TYPE = "costs"
 
-    def __init__(self, query_params):  # noqa: C901
+    def __init__(self, query_params):
         """Class Constructor.
 
         Instance Attributes:
