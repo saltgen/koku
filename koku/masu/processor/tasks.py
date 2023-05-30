@@ -18,7 +18,7 @@ from dateutil import parser
 from django.conf import settings
 from django.db import connection
 from django.db.utils import IntegrityError
-from tenant_schemas.utils import schema_context
+from django_tenants.utils import schema_context
 
 import masu.prometheus_stats as worker_stats
 from api.common import log_json
@@ -42,6 +42,7 @@ from masu.external.downloader.report_downloader_base import ReportDownloaderWarn
 from masu.external.report_downloader import ReportDownloader
 from masu.external.report_downloader import ReportDownloaderError
 from masu.processor import disable_ocp_on_cloud_summary
+from masu.processor import disable_source
 from masu.processor import disable_summary_processing
 from masu.processor import is_large_customer
 from masu.processor._tasks.process import _process_report_file
@@ -369,13 +370,14 @@ def update_summary_tables(  # noqa: C901
 
     """
     if disable_summary_processing(schema_name):
-        msg = f"Summary disabled for {schema_name}."
-        LOG.info(msg)
+        LOG.info(f"Summary disabled for {schema_name}.")
+        return
+    if disable_source(provider_uuid):
         return
     if disable_ocp_on_cloud_summary(schema_name):
-        msg = f"OCP on Cloud summary disabled for {schema_name}."
-        LOG.info(msg)
+        LOG.info(f"OCP on Cloud summary disabled for {schema_name}.")
         ocp_on_cloud = False
+
     worker_stats.REPORT_SUMMARY_ATTEMPTS_COUNTER.labels(provider_type=provider).inc()
     task_name = "masu.processor.tasks.update_summary_tables"
     if isinstance(start_date, str):

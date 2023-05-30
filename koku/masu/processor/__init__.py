@@ -125,5 +125,23 @@ def enable_aws_category_settings(account):
     account = convert_account(account)
 
     context = {"schema": account}
-    res = bool(UNLEASH_CLIENT.is_enabled("cost-management.backend.enable_aws_category_settings", context))
+    res = bool(
+        UNLEASH_CLIENT.is_enabled(
+            "cost-management.backend.enable_aws_category_settings", context, fallback_development_true
+        )
+    )
+    return res
+
+
+def disable_source(source_uuid):
+    """
+    Disable source processing
+
+    params:
+        source_uuid: unique identifer of source or provider
+    """
+    context = {"source_uuid": source_uuid}
+    LOG.info(f"Disabled source UNLEASH check: {context}")
+    res = bool(UNLEASH_CLIENT.is_enabled("cost-management.backend.disable-source", context))
+    LOG.info(f"    Processing {'disabled' if res else 'enabled'} for source {source_uuid}")
     return res

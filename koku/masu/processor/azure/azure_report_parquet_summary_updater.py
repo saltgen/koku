@@ -3,7 +3,7 @@ import logging
 
 import ciso8601
 from django.conf import settings
-from tenant_schemas.utils import schema_context
+from django_tenants.utils import schema_context
 
 from koku.pg_partition import PartitionHandlerMixin
 from masu.database.azure_report_db_accessor import AzureReportDBAccessor
@@ -79,6 +79,11 @@ class AzureReportParquetSummaryUpdater(PartitionHandlerMixin):
                 bills = accessor.bills_for_provider_uuid(self._provider.uuid, start_date)
                 bill_ids = [str(bill.id) for bill in bills]
                 current_bill_id = bills.first().id if bills else None
+
+            if current_bill_id is None:
+                msg = f"No bill was found for {start_date}. Skipping summarization"
+                LOG.info(msg)
+                return start_date, end_date
 
             for start, end in date_range_pair(start_date, end_date, step=settings.TRINO_DATE_STEP):
                 LOG.info(
