@@ -16,6 +16,7 @@ class EnabledTagKeys(models.Model):
             models.Index(fields=["provider_type"], name="tag_provider_type_index"),
         ]
         db_table = "reporting_enabledtagkeys"
+        unique_together = ("key", "provider_type")
 
     uuid = models.UUIDField(default=uuid4, editable=False, unique=True, null=False, primary_key=True)
     key = models.CharField(max_length=253)
