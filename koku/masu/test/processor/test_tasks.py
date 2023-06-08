@@ -1524,7 +1524,6 @@ class TestWorkerCacheThrottling(MasuTestCase):
         cache_args = [
             self.schema,
             self.aws_provider_uuid,
-            self.ocpaws_provider_uuid,
             str(start_date.strftime("%Y-%m")),
         ]
 

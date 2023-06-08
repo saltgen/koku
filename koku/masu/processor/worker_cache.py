@@ -93,14 +93,14 @@ class WorkerCache:
         return self.cache.get(settings.WORKER_CACHE_KEY, default=[], version=self._hostname)
 
     def add_worker_keys(self):
-        """Add worker key verison to list of workers."""
+        """Add worker key version to list of workers."""
         worker_keys = self.worker_cache_keys
         if self._hostname not in worker_keys:
             worker_keys.update((self._hostname,))
             self.cache.set("keys", worker_keys)
 
     def remove_worker_key(self, hostname):
-        """Remove worker key verison to list of workers."""
+        """Remove worker key version to list of workers."""
         worker_keys = self.worker_cache_keys
         if hostname in worker_keys:
             worker_keys.remove(hostname)
