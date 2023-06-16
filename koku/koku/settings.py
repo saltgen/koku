@@ -24,10 +24,10 @@ from botocore.exceptions import ClientError
 from corsheaders.defaults import default_headers
 
 from . import database
-from . import sentry
+from . import sentry  # noqa: F401
 from .configurator import CONFIGURATOR
 from .env import ENVIRONMENT
-
+from koku.management import ConcurrentExecutor  # noqa: F401
 
 # Database
 # https://docs.djangoproject.com/en/2.0/ref/settings/#databases
