@@ -232,7 +232,7 @@ requirements:
 	pipenv lock
 
 run-migrations:
-	scripts/run_migrations.sh $(applabel) $(migration)
+	scripts/run_migrations.py $(applabel) $(migration)
 
 serve:
 	$(DJANGO_MANAGE) runserver

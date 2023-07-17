@@ -68,7 +68,7 @@ objects:
         args:
         - /bin/bash
         - -c
-        - $APP_ROOT/scripts/run_migrations.sh
+        - $APP_ROOT/scripts/run_migrations.py
         env:
         - name: CLOWDER_ENABLED
           value: ${CLOWDER_ENABLED}
