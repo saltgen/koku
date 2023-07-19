@@ -136,9 +136,10 @@ SUBS_EXTRACTION_BACKLOG = Gauge(
     registry=WORKER_REGISTRY,
     multiprocess_mode="livesum",
 )
+
 SUBS_TRANSMISSION_BACKLOG = Gauge(
     "subs_transmission_backlog",
-    "Number of celery tasks in the SUBS Data Tranmission queue",
+    "Number of celery tasks in the SUBS Data Transmission queue",
     registry=WORKER_REGISTRY,
     multiprocess_mode="livesum",
 )
@@ -151,7 +152,7 @@ QUEUES = {
     "priority": PRIORITY_BACKLOG,
     "priority_xl": PRIORITY_XL_BACKLOG,
     "refresh": REFRESH_BACKLOG,
-    "refresh_x;": REFRESH_XL_BACKLOG,
+    "refresh_xl": REFRESH_XL_BACKLOG,
     "cost_model": COST_MODEL_BACKLOG,
     "cost_model_xl": COST_MODEL_XL_BACKLOG,
     "celery": DEFAULT_BACKLOG,
