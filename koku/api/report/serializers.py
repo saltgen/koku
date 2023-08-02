@@ -4,6 +4,7 @@
 #
 """Common serializer logic."""
 import copy
+from collections.abc import Mapping
 
 from django.utils.translation import ugettext as _
 from rest_framework import serializers
@@ -137,6 +138,7 @@ class BaseSerializer(serializers.Serializer):
     """A common serializer base for all of our serializers."""
 
     _opfields = None
+    _op_mapping = None
     _tagkey_support = None
     _aws_category = False
 
@@ -154,6 +156,14 @@ class BaseSerializer(serializers.Serializer):
             add_operator_specified_fields(self.fields, self._opfields)
         if self.context.get("request"):
             self.schema = self.context["request"].user.customer.schema_name
+
+    def _convert_params_to_internal_values(self, data):
+        """This method allows us to map param values to internal db models"""
+        if isinstance(data, Mapping):
+            for serializer_key, internal_key in self._op_mapping.items():
+                if serializer_key in data:
+                    data[internal_key] = data.pop(serializer_key)
+        return data
 
     def validate(self, data):
         """Validate incoming data.
@@ -199,6 +209,12 @@ class BaseSerializer(serializers.Serializer):
         for key, val in fields.items():
             setattr(self, key, val)
             self.fields.update({key: val})
+
+    def to_internal_value(self, data):
+        """Overwrites the serializer to internal value."""
+        if self._op_mapping:
+            data = self._convert_params_to_internal_values(data)
+        return super().to_internal_value(data)
 
 
 class FilterSerializer(BaseSerializer):

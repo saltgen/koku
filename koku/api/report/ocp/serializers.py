@@ -18,15 +18,31 @@ from api.report.serializers import StringOrListField
 
 DISTRIBUTED_COST_INTERNAL = {"distributed_cost": "cost_total_distributed"}
 
+# PVC_INTERNAL = {"pvc": "persistentvolumeclaim"}
+
+
+# def update_internal_param(data, params=PVC_INTERNAL):
+#     if isinstance(data, Mapping):
+#         for serializer_key, internal_key in params.items():
+#             if serializer_key in data:
+#                 data[internal_key] = data.pop(serializer_key)
+
+#     return data
+
 
 class OCPGroupBySerializer(GroupSerializer):
     """Serializer for handling query parameter group_by."""
 
-    _opfields = ("project", "cluster", "node")
+    _opfields = ("project", "cluster", "node", "pvc")
 
     cluster = StringOrListField(child=serializers.CharField(), required=False)
     project = StringOrListField(child=serializers.CharField(), required=False)
     node = StringOrListField(child=serializers.CharField(), required=False)
+    pvc = StringOrListField(child=serializers.CharField(), required=False)
+
+    # def to_internal_value(self, data):
+    #     """Send to internal value."""
+    #     return super().to_internal_value(update_internal_param(data))
 
 
 class OCPOrderBySerializer(OrderSerializer):
@@ -65,13 +81,14 @@ class OCPFilterSerializer(BaseFilterSerializer):
 
     INFRASTRUCTURE_CHOICES = (("aws", "aws"), ("azure", "azure"), ("gcp", "gcp"))
 
-    _opfields = ("project", "cluster", "node", "infrastructures", "category")
+    _opfields = ("project", "cluster", "node", "infrastructures", "category", "pvc")
 
     project = StringOrListField(child=serializers.CharField(), required=False)
     cluster = StringOrListField(child=serializers.CharField(), required=False)
     node = StringOrListField(child=serializers.CharField(), required=False)
     infrastructures = serializers.ChoiceField(choices=INFRASTRUCTURE_CHOICES, required=False)
     category = StringOrListField(child=serializers.CharField(), required=False)
+    pvc = StringOrListField(child=serializers.CharField(), required=False)
 
     def validate(self, data):
         """Validate incoming data.
@@ -98,13 +115,14 @@ class OCPExcludeSerializer(BaseExcludeSerializer):
 
     INFRASTRUCTURE_CHOICES = (("aws", "aws"), ("azure", "azure"))
 
-    _opfields = ("project", "cluster", "node", "infrastructures", "category")
+    _opfields = ("project", "cluster", "node", "infrastructures", "category", "pvc")
 
     project = StringOrListField(child=serializers.CharField(), required=False)
     cluster = StringOrListField(child=serializers.CharField(), required=False)
     node = StringOrListField(child=serializers.CharField(), required=False)
     infrastructures = serializers.ChoiceField(choices=INFRASTRUCTURE_CHOICES, required=False)
     category = StringOrListField(child=serializers.CharField(), required=False)
+    pvc = StringOrListField(child=serializers.CharField(), required=False)
 
     def validate(self, data):
         """Validate incoming data.
