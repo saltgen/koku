@@ -70,7 +70,7 @@ class TestOCPPostProcessor(MasuTestCase):
         base_storage_data = {
             "namespace": namespace,
             "pod": pod,
-            "persistentvolumeclaim": pvc,
+            "pvc": pvc,
             "persistentvolume": pvc,
             "storageclass": "gold",
             "persistentvolumeclaim_capacity_bytes": capacity,

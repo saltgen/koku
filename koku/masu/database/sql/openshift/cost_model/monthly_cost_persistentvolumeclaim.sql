@@ -33,7 +33,7 @@ INSERT INTO {{schema | sqlsafe}}.reporting_ocpusagelineitem_daily_summary (
     node_capacity_memory_gigabyte_hours,
     cluster_capacity_cpu_core_hours,
     cluster_capacity_memory_gigabyte_hours,
-    persistentvolumeclaim,
+    pvc,
     persistentvolume,
     storageclass,
     volume_labels,
@@ -53,9 +53,9 @@ WITH cte_volume_count AS (
     SELECT usage_start,
         cluster_id,
         namespace,
-        count(DISTINCT persistentvolumeclaim) as pvc_count
+        count(DISTINCT pvc) as pvc_count
     FROM {{schema | sqlsafe}}.reporting_ocpusagelineitem_daily_summary AS lids
-    WHERE lids.persistentvolumeclaim IS NOT NULL
+    WHERE lids.pvc IS NOT NULL
         AND lids.usage_start >= {{start_date}}::date
         AND lids.usage_start <= {{end_date}}::date
         AND lids.infrastructure_monthly_cost_json IS NULL
@@ -86,7 +86,7 @@ SELECT uuid_generate_v4(),
     max(lids.node_capacity_memory_gigabyte_hours) as node_capacity_memory_gigabyte_hours,
     max(lids.cluster_capacity_cpu_core_hours) as cluster_capacity_cpu_core_hours,
     max(lids.cluster_capacity_memory_gigabyte_hours) as cluster_capacity_memory_gigabyte_hours,
-    lids.persistentvolumeclaim,
+    lids.pvc,
     lids.persistentvolume,
     max(lids.storageclass) as storageclass,
     lids.volume_labels,
@@ -113,10 +113,10 @@ JOIN cte_volume_count AS vc
 WHERE lids.usage_start >= {{start_date}}::date
     AND lids.usage_start <= {{end_date}}::date
     AND lids.report_period_id = {{report_period_id}}
-    AND lids.persistentvolumeclaim IS NOT NULL
+    AND lids.pvc IS NOT NULL
     AND lids.data_source = 'Storage'
     AND monthly_cost_type IS NULL
     AND persistentvolumeclaim_capacity_gigabyte_months IS NOT NULL
     AND persistentvolumeclaim_capacity_gigabyte_months != 0
-GROUP BY lids.usage_start, lids.source_uuid, lids.cluster_id, lids.node, lids.namespace, lids.persistentvolumeclaim, lids.persistentvolume, lids.volume_labels, vc.pvc_count, lids.cost_category_id
+GROUP BY lids.usage_start, lids.source_uuid, lids.cluster_id, lids.node, lids.namespace, lids.pvc, lids.persistentvolume, lids.volume_labels, vc.pvc_count, lids.cost_category_id
 ;

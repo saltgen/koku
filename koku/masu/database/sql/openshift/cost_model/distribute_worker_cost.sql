@@ -67,7 +67,7 @@ INSERT INTO {{schema | sqlsafe}}.reporting_ocpusagelineitem_daily_summary (
     node_capacity_memory_gigabyte_hours,
     cluster_capacity_cpu_core_hours,
     cluster_capacity_memory_gigabyte_hours,
-    persistentvolumeclaim,
+    pvc,
     persistentvolume,
     storageclass,
     volume_labels,

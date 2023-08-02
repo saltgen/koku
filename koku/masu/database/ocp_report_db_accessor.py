@@ -473,7 +473,7 @@ class OCPReportDBAccessor(SQLScriptAtomicExecutorMixin, ReportDBAccessorBase):
                     persistentvolumeclaim__isnull=False,
                     namespace__isnull=False,
                 )
-                .values_list("persistentvolumeclaim", "node", "namespace")
+                .values_list("pvc", "node", "namespace")
                 .distinct()
             )
             return [(pvc[0], pvc[1], pvc[2]) for pvc in unique_pvcs]
