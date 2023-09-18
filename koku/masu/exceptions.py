@@ -15,7 +15,3 @@ class MasuProviderError(Exception):
 
 class MasuConfigurationError(Exception):
     """Masu Configuration Error."""
-
-
-class HasherError(Exception):
-    """Hasher Utility class error."""
