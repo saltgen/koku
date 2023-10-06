@@ -64,7 +64,7 @@ class ForecastView(APIView):
         LOG.debug(f"DATA: {output}")
         cost_type = params.parameters.get("cost_type")
 
-        if self.serializer is AWSCostForecastParamSerializer:
+        if self.serializer is AWSCostForecastParamSerializer or self.serializer is OCPAWSCostForecastParamSerializer:
             paginator = AWSForecastListPaginator(output, request, cost_type)
         else:
             paginator = ForecastListPaginator(output, request)
