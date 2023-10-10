@@ -10,12 +10,14 @@ from datetime import datetime
 from decimal import Decimal
 from enum import Enum
 from pathlib import Path
+from typing import Any
+from typing import Union
+from uuid import UUID
 
 import pandas as pd
-from dateutil import parser
 from dateutil.relativedelta import relativedelta
+from pydantic import BaseModel
 
-from api.common import log_json
 from api.models import Provider
 from api.utils import DateHelper as dh
 
@@ -180,7 +182,60 @@ OCP_REPORT_TYPES = {
 }
 
 
-def get_report_details(report_directory):
+class OCPManifest(BaseModel):
+    uuid: UUID
+    cluster_id: UUID
+    tracing_id: str
+    version: str
+    usage_month: str = ""
+    files: Union[list[str], None] = []
+    resource_optimization_files: Union[list[str], None] = []
+    cr_status: dict[str, Any]
+    certified: bool
+    daily_reports: bool
+    manifest_path: str
+    date: datetime
+    start: datetime
+    end: datetime
+    destination_dir: os.PathLike = ""
+    manifest_destination_path: os.PathLike = ""
+    provider_uuid: str = ""
+    provider_type: str = ""
+    schema_name: str = ""
+    account: str = ""
+    org_id: str = ""
+    manifest_id: int = 0
+    current_file: str = ""
+
+    # def __post_init__(self):
+    #     self.tracing_id = self.uuid
+    #     self.date = parser.parse(self.date)
+    #     self.usage_month = month_date_range(self.date)
+    #     if payload_start := self.start:
+    #         self.start = parser.parse(self.start)
+    #     if payload_end := self.end and payload_start:
+    #         start = datetime.strptime(payload_start[:10], "%Y-%m-%d")
+    #         end = datetime.strptime(payload_end[:10], "%Y-%m-%d")
+    #         # We override the end date from the first of the next month to the end of current month
+    #         # We do this to prevent summary from triggering unnecessarily on the next month
+    #         if start.month != end.month and end.day == 1:
+    #             payload_end = dh().month_end(start)
+    #         self.end = parser.parse(payload_end)
+    #     self.destination_dir = f"{Config.INSIGHTS_LOCAL_REPORT_DIR}/{self.cluster_id}"
+    #     self.manifest_destination_path = f"{self.destination_dir}/{os.path.basename(self.manifest_path)}"
+    #     self.provider_uuid = get_provider_uuid_from_cluster_id(self.cluster_id)
+
+    #     if self.files is None:
+    #         self.files = []
+    #     if self.resource_optimization_files is None:
+    #         self.resource_optimization_files = []
+
+
+class ManifestNotFound(Exception):
+    pass
+
+
+def get_ocp_manifest(report_directory, request_id) -> OCPManifest:
     """
     Get OCP usage report details from manifest file.
 
@@ -192,47 +247,20 @@ def get_report_details(report_directory):
         report_directory (String): base directory for report.
 
     Returns:
-        (Dict): keys: value
-            "file: String,
-             cluster_id: String,
-             payload_date: DateTime,
-             manifest_path: String,
-             uuid: String,
-             manifest_path: String",
-             start: DateTime,
-             end: DateTime
+        OCPManifest
 
     """
-    manifest_path = f"{report_directory}/manifest.json"
-    if not os.path.exists(manifest_path):
-        LOG.info(log_json(msg="no manifest available", manifest_path=manifest_path))
-        return {}
-    try:
-        with open(manifest_path) as file:
-            payload_dict = json.load(file)
-            payload_dict["date"] = parser.parse(payload_dict["date"])
-    except (OSError, KeyError) as exc:
-        LOG.error("unable to extract manifest data", exc_info=exc)
-        return {}
+    manifest_path = Path(f"{report_directory}/manifest.json")
 
-    payload_dict["manifest_path"] = Path(manifest_path)
-    # parse start and end dates if in manifest
-    if payload_start := payload_dict.get("start"):
-        payload_dict["start"] = parser.parse(payload_start)
-        if "0001-01-01 00:00:00+00:00" not in payload_start:
-            # if we have a valid start date, set the date to the start
-            # so that a manifest created at midnight on the first of the month
-            # will associate the data with the correct reporting month
-            payload_dict["date"] = payload_dict["start"]
-    if payload_start and (payload_end := payload_dict.get("end")):
-        payload_dict["end"] = parser.parse(payload_end)
-        start = datetime.strptime(payload_start[:10], "%Y-%m-%d")
-        end = datetime.strptime(payload_end[:10], "%Y-%m-%d")
-        # We override the end date from the first of the next month to the end of current month
-        # We do this to prevent summary from triggering unnecessarily on the next month
-        if start.month != end.month and end.day == 1:
-            payload_dict["end"] = dh().month_end(start)
-    return payload_dict
+    if not os.path.exists(manifest_path):
+        msg = f"no manifest available at {manifest_path}"
+        LOG.info(msg)
+        raise ManifestNotFound(msg)
+
+    with open(manifest_path) as file:
+        payload_dict = json.load(file)
+
+    return OCPManifest(request_id=request_id, manifest_path=manifest_path, **payload_dict)
 
 
 def month_date_range(for_date_time):
@@ -316,7 +344,7 @@ def get_cluster_alias_from_cluster_id(cluster_id):
     return cluster_alias
 
 
-def get_provider_uuid_from_cluster_id(cluster_id):
+def get_provider_from_cluster_id(cluster_id):
     """
     Return the provider UUID given the cluster ID.
 
@@ -324,16 +352,13 @@ def get_provider_uuid_from_cluster_id(cluster_id):
         cluster_id (String): OpenShift Cluster ID
 
     Returns:
-        (String): provider UUID
+        (Provider): provider
 
     """
-    provider_uuid = None
     credentials = {"cluster_id": cluster_id}
     if provider := Provider.objects.filter(authentication__credentials=credentials).first():
-        provider_uuid = str(provider.uuid)
-        LOG.info(f"found provider: {provider_uuid} for cluster-id: {cluster_id}")
-
-    return provider_uuid
+        LOG.info(f"found provider: {provider.uuid} for cluster-id: {cluster_id}")
+    return provider
 
 
 def detect_type(report_path):

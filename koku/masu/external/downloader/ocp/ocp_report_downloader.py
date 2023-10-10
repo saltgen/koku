@@ -27,8 +27,19 @@ from reporting_common.models import CostUsageReportManifest
 
 DATA_DIR = Config.TMP_DIR
 REPORTS_DIR = Config.INSIGHTS_LOCAL_REPORT_DIR
+DATE_COLUMNS = ["report_period_start", "report_period_end", "interval_start", "interval_end"]
 
 LOG = logging.getLogger(__name__)
+
+
+def read_ocp_csv(file_path: os.PathLike, usecols: list = None) -> pd.DataFrame:
+    try:
+        return pd.read_csv(
+            file_path, usecols=usecols, parse_dates=DATE_COLUMNS, date_format=Config.OCP_DATETIME_STR_FORMAT
+        )
+    except Exception as error:
+        LOG.error(f"File {file_path} could not be parsed. Reason: {str(error)}")
+        raise error
 
 
 def divide_csv_daily(file_path: os.PathLike, manifest_id: int):
@@ -37,24 +48,14 @@ def divide_csv_daily(file_path: os.PathLike, manifest_id: int):
     """
     daily_files = []
 
-    try:
-        data_frame = pd.read_csv(file_path)
-    except Exception as error:
-        LOG.error(f"File {file_path} could not be parsed. Reason: {str(error)}")
-        raise error
+    data_frame = read_ocp_csv(file_path)
 
     report_type, _ = utils.detect_type(file_path)
     unique_times = data_frame.interval_start.unique()
-    days = list({cur_dt[:10] for cur_dt in unique_times})
-    daily_data_frames = [
-        {"data_frame": data_frame[data_frame.interval_start.str.contains(cur_day)], "date": cur_day}
-        for cur_day in days
-    ]
+    dates = list({cur_dt.date() for cur_dt in unique_times})
 
-    for daily_data in daily_data_frames:
-        day = daily_data.get("date")
-        df = daily_data.get("data_frame")
-        file_prefix = f"{report_type}.{day}.{manifest_id}"
+    for date in dates:
+        file_prefix = f"{report_type}.{date}.{manifest_id}"
         with transaction.atomic():
             # With split payloads, we could have a race condition trying to update the `report_tracker`.
             # using a transaction and `select_for_update` should minimize the risk of multiple
@@ -67,11 +68,14 @@ def divide_csv_daily(file_path: os.PathLike, manifest_id: int):
             manifest.save(update_fields=["report_tracker"])
         day_file = f"{file_prefix}.{counter}.csv"
         day_filepath = file_path.parent.joinpath(day_file)
+
+        df = data_frame[data_frame.interval_start.dt.date == date]
         df.to_csv(day_filepath, index=False, header=True)
+
         daily_files.append(
             {
                 "filepath": day_filepath,
-                "date": datetime.strptime(day, "%Y-%m-%d"),
+                "date": date,
                 "num_hours": len(df.interval_start.unique()),
             }
         )
@@ -120,9 +124,20 @@ def create_daily_archives(tracing_id, account, provider_uuid, filepath, manifest
             manifest_id,
             context,
         )
+        df = read_ocp_csv(
+            filepath, usecols=["report_period_end", "report_period_start", "interval_start", "interval_end"]
+        )
+        start = df.interval_start.min()
+        end = df.interval_end.max()
         daily_file_names[filepath] = {
-            "meta_reportdatestart": str(daily_file["date"].date()),
-            "meta_reportnumhours": str(daily_file["num_hours"]),
+            "meta": {
+                "meta_reportdatestart": str(daily_file["date"]),
+                "meta_reportnumhours": str(daily_file["num_hours"]),
+            },
+            "dates": {
+                "report_start": start,
+                "report_end": end,
+            },
         }
     return daily_file_names
 
@@ -233,7 +248,7 @@ class OCPReportDownloader(ReportDownloaderBase, DownloaderInterface):
         directory = f"{REPORTS_DIR}/{self.cluster_id}/{dates}"
         msg = f"Looking for manifest at {directory}"
         LOG.info(log_json(self.tracing_id, msg=msg, context=self.context))
-        report_meta = utils.get_report_details(directory)
+        report_meta = utils.get_ocp_manifest(directory)
         return report_meta
 
     def get_manifest_context_for_date(self, date):

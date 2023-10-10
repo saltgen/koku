@@ -64,7 +64,7 @@ class OCPUtilTests(MasuTestCase):
     def test_get_provider_uuid_from_cluster_id(self):
         """Test that the provider uuid is returned for a cluster ID."""
         cluster_id = self.ocp_cluster_id
-        provider_uuid = utils.get_provider_uuid_from_cluster_id(cluster_id)
+        provider_uuid = utils.get_provider_from_cluster_id(cluster_id)
         try:
             UUID(provider_uuid)
         except ValueError:
@@ -73,7 +73,7 @@ class OCPUtilTests(MasuTestCase):
     def test_get_provider_uuid_from_invalid_cluster_id(self):
         """Test that the provider uuid is not returned for an invalid cluster ID."""
         cluster_id = "bad_cluster_id"
-        provider_uuid = utils.get_provider_uuid_from_cluster_id(cluster_id)
+        provider_uuid = utils.get_provider_from_cluster_id(cluster_id)
         self.assertIsNone(provider_uuid)
 
     def test_match_openshift_labels(self):
@@ -121,19 +121,19 @@ class OCPUtilTests(MasuTestCase):
             manifest_file = f"{manifest_path}/manifest.json"
             with self.assertLogs("masu.util.ocp.common", level="INFO") as logger:
                 expected = "no manifest available"
-                utils.get_report_details(manifest_path)
+                utils.get_ocp_manifest(manifest_path)
                 self.assertTrue(any(expected in log for log in logger.output))
 
             with open(manifest_file, "w") as f:
                 data = {"key": "value"}
                 json.dump(data, f)
-            utils.get_report_details(manifest_path)
+            utils.get_ocp_manifest(manifest_path)
 
             with patch("masu.util.ocp.common.open") as mock_open:
                 mock_open.side_effect = OSError
                 with self.assertLogs("masu.util.ocp.common", level="INFO") as logger:
                     expected = "unable to extract manifest data"
-                    utils.get_report_details(manifest_path)
+                    utils.get_ocp_manifest(manifest_path)
                     self.assertIn(expected, logger.output[0])
 
     def test_detect_type_pod_usage(self):
