@@ -9,7 +9,6 @@ import os
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
-from pathlib import Path
 from typing import Any
 from typing import Union
 from uuid import UUID
@@ -183,29 +182,31 @@ OCP_REPORT_TYPES = {
 
 
 class OCPManifest(BaseModel):
+    # Fields from the manifest payload
     uuid: UUID
     cluster_id: UUID
-    tracing_id: str
     version: str
-    usage_month: str = ""
+    date: datetime
     files: Union[list[str], None] = []
     resource_optimization_files: Union[list[str], None] = []
+    start: datetime
+    end: datetime
     cr_status: dict[str, Any]
     certified: bool
     daily_reports: bool
-    manifest_path: str
-    date: datetime
-    start: datetime
-    end: datetime
-    destination_dir: os.PathLike = ""
-    manifest_destination_path: os.PathLike = ""
+
+    request_id: str
+    payload_dir: os.PathLike
+    current_file: os.PathLike = ""
+
+    usage_month: str = ""
+
     provider_uuid: str = ""
     provider_type: str = ""
     schema_name: str = ""
     account: str = ""
     org_id: str = ""
     manifest_id: int = 0
-    current_file: str = ""
 
     # def __post_init__(self):
     #     self.tracing_id = self.uuid
@@ -235,7 +236,7 @@ class ManifestNotFound(Exception):
     pass
 
 
-def get_ocp_manifest(report_directory, request_id) -> OCPManifest:
+def get_ocp_manifest(manifest_filepath: os.PathLike, request_id: str) -> OCPManifest:
     """
     Get OCP usage report details from manifest file.
 
@@ -250,17 +251,15 @@ def get_ocp_manifest(report_directory, request_id) -> OCPManifest:
         OCPManifest
 
     """
-    manifest_path = Path(f"{report_directory}/manifest.json")
-
-    if not os.path.exists(manifest_path):
-        msg = f"no manifest available at {manifest_path}"
+    if not os.path.exists(manifest_filepath):
+        msg = f"no manifest available at {manifest_filepath}"
         LOG.info(msg)
         raise ManifestNotFound(msg)
 
-    with open(manifest_path) as file:
+    with open(manifest_filepath) as file:
         payload_dict = json.load(file)
 
-    return OCPManifest(request_id=request_id, manifest_path=manifest_path, **payload_dict)
+    return OCPManifest(request_id=request_id, payload_dir=manifest_filepath.parent, **payload_dict)
 
 
 def month_date_range(for_date_time):

@@ -277,33 +277,33 @@ def extract_payload(request_id, url, b64_identity, context):  # noqa: C901
                 current_file: String
 
     """
-    payload_path = download_payload(request_id, url, context)
-    manifest_path, payload_files = extract_payload_contents(request_id, payload_path, context)
+    payload_filepath = download_payload(request_id, url, context)
+    manifest_filename, payload_files = extract_payload_contents(request_id, payload_filepath, context)
 
     # Open manifest.json file and build the payload dictionary.
-    full_manifest_path = Path(payload_path.parent, manifest_path)
-    ocp_manifest = utils.get_ocp_manifest(full_manifest_path.parent, request_id)
+    full_manifest_path = Path(payload_filepath.parent, manifest_filename)
+    ocp_manifest = utils.get_ocp_manifest(full_manifest_path, request_id)
 
-    manifest_uuid = ocp_manifest.get("uuid", request_id)
     context |= {
         "request_id": request_id,
         "cluster_id": ocp_manifest.cluster_id,
-        "manifest_uuid": manifest_uuid,
+        "manifest_uuid": ocp_manifest.uuid,
     }
     LOG.info(
         log_json(
             request_id,
             msg=f"Payload with the request id {request_id} from cluster {ocp_manifest.cluster_id}"
-            + f" is part of the report with manifest id {manifest_uuid}",
+            + f" is part of the report with manifest id {ocp_manifest.uuid}",
             context=context,
         )
     )
     account = get_account_from_cluster_id(ocp_manifest.cluster_id, request_id, context)
     if not account:
         msg = f"Recieved unexpected OCP report from {ocp_manifest.cluster_id}"
-        LOG.warning(log_json(manifest_uuid, msg=msg, context=context))
-        shutil.rmtree(payload_path.parent)
-        return None, manifest_uuid
+        LOG.warning(log_json(request_id, msg=msg, context=context))
+        shutil.rmtree(payload_filepath.parent)
+        return None, ocp_manifest.uuid
+
     schema_name = account.get("schema_name")
     provider_type = account.get("provider_type")
     source_id = None
@@ -320,7 +320,7 @@ def extract_payload(request_id, url, b64_identity, context):  # noqa: C901
     # new customers include the org prefix in case an org-id and an account number might overlap
     ocp_manifest["account"] = schema_name.strip("acct")
     ocp_manifest["request_id"] = request_id
-    ocp_manifest["tracing_id"] = manifest_uuid
+    ocp_manifest["tracing_id"] = ocp_manifest.uuid
 
     # Create directory tree for report.
     usage_month = utils.month_date_range(ocp_manifest.get("date"))
@@ -341,21 +341,18 @@ def extract_payload(request_id, url, b64_identity, context):  # noqa: C901
     manifest_files = ocp_manifest.get("files") or []
     for ros_file in manifest_ros_files:
         if ros_file in payload_files:
-            ros_reports.append((ros_file, payload_path.with_name(ros_file)))
-    ros_processor = ROSReportShipper(
-        ocp_manifest,
-        b64_identity,
-        context,
-    )
+            ros_reports.append((ros_file, payload_filepath.with_name(ros_file)))
+    ros_processor = ROSReportShipper(ocp_manifest, b64_identity, context)
     try:
         ros_processor.process_manifest_reports(ros_reports)
     except Exception as e:
         # If a ROS report fails to process, this should not prevent Koku processing from continuing.
         msg = f"ROS reports not processed for payload. Reason: {e}"
         LOG.warning(log_json(request_id, msg=msg, context=context))
+
     for report_file in manifest_files:
         current_meta = ocp_manifest.copy()
-        payload_source_path = Path(payload_path.parent, report_file)
+        payload_source_path = Path(payload_filepath.parent, report_file)
         payload_destination_path = Path(destination_dir, report_file)
         try:
             shutil.copy(payload_source_path, payload_destination_path)
@@ -364,8 +361,8 @@ def extract_payload(request_id, url, b64_identity, context):  # noqa: C901
             LOG.debug(log_json(request_id, msg=msg, context=context))
             continue
         current_meta["current_file"] = payload_destination_path
-        record_all_manifest_files(ocp_manifest["manifest_id"], ocp_manifest.get("files"), manifest_uuid)
-        if record_report_status(ocp_manifest["manifest_id"], report_file, manifest_uuid, context):
+        record_all_manifest_files(ocp_manifest["manifest_id"], ocp_manifest.get("files"), ocp_manifest.uuid)
+        if record_report_status(ocp_manifest["manifest_id"], report_file, ocp_manifest.uuid, context):
             # Report already processed
             continue
         msg = f"Successfully extracted OCP for {ocp_manifest.get('cluster_id')}/{usage_month}"
@@ -378,8 +375,8 @@ def extract_payload(request_id, url, b64_identity, context):  # noqa: C901
         )
         report_metas.append(current_meta)
     # Remove temporary directory and files
-    shutil.rmtree(payload_path.parent)
-    return report_metas, manifest_uuid
+    shutil.rmtree(payload_filepath.parent)
+    return report_metas, ocp_manifest.uuid
 
 
 def get_report_dates(report_dates, start, end):
