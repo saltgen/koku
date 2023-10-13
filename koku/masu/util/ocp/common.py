@@ -11,11 +11,11 @@ from decimal import Decimal
 from enum import Enum
 from typing import Any
 from typing import Union
-from uuid import UUID
 
 import pandas as pd
 from dateutil.relativedelta import relativedelta
 from pydantic import BaseModel
+from pydantic import field_validator
 
 from api.models import Provider
 from api.utils import DateHelper as dh
@@ -183,53 +183,44 @@ OCP_REPORT_TYPES = {
 
 class OCPManifest(BaseModel):
     # Fields from the manifest payload
-    uuid: UUID
-    cluster_id: UUID
+    uuid: str
+    cluster_id: str
     version: str
     date: datetime
-    files: Union[list[str], None] = []
-    resource_optimization_files: Union[list[str], None] = []
+    files: Union[list[str], None]
+    resource_optimization_files: Union[list[str], None]
     start: datetime
     end: datetime
     cr_status: dict[str, Any]
-    certified: bool
-    daily_reports: bool
+    certified: bool = False
+    daily_reports: bool = False
 
     request_id: str
-    payload_dir: os.PathLike
-    current_file: os.PathLike = ""
 
-    usage_month: str = ""
+    current_file: os.PathLike = ""
+    destination_dir: os.PathLike = ""
+    process_complete: bool = False
+    split_files: list[os.PathLike] = []
+    ocp_files_to_process: dict = {}
 
     provider_uuid: str = ""
     provider_type: str = ""
     schema_name: str = ""
-    account: str = ""
+    s3_schema_name: str = ""
+    account_id: str = ""
     org_id: str = ""
+
+    source_id: str = ""
     manifest_id: int = 0
 
-    # def __post_init__(self):
-    #     self.tracing_id = self.uuid
-    #     self.date = parser.parse(self.date)
-    #     self.usage_month = month_date_range(self.date)
-    #     if payload_start := self.start:
-    #         self.start = parser.parse(self.start)
-    #     if payload_end := self.end and payload_start:
-    #         start = datetime.strptime(payload_start[:10], "%Y-%m-%d")
-    #         end = datetime.strptime(payload_end[:10], "%Y-%m-%d")
-    #         # We override the end date from the first of the next month to the end of current month
-    #         # We do this to prevent summary from triggering unnecessarily on the next month
-    #         if start.month != end.month and end.day == 1:
-    #             payload_end = dh().month_end(start)
-    #         self.end = parser.parse(payload_end)
-    #     self.destination_dir = f"{Config.INSIGHTS_LOCAL_REPORT_DIR}/{self.cluster_id}"
-    #     self.manifest_destination_path = f"{self.destination_dir}/{os.path.basename(self.manifest_path)}"
-    #     self.provider_uuid = get_provider_uuid_from_cluster_id(self.cluster_id)
+    class Config:
+        validate_assignment = True
+        coerce_numbers_to_str = True
 
-    #     if self.files is None:
-    #         self.files = []
-    #     if self.resource_optimization_files is None:
-    #         self.resource_optimization_files = []
+    @field_validator("files", "resource_optimization_files")
+    @classmethod
+    def replace_none_with_empty_list(cls, v: Union[list[str], None]) -> list:
+        return [] if v is None else v
 
 
 class ManifestNotFound(Exception):
@@ -259,7 +250,7 @@ def get_ocp_manifest(manifest_filepath: os.PathLike, request_id: str) -> OCPMani
     with open(manifest_filepath) as file:
         payload_dict = json.load(file)
 
-    return OCPManifest(request_id=request_id, payload_dir=manifest_filepath.parent, **payload_dict)
+    return OCPManifest(request_id=request_id, **payload_dict)
 
 
 def month_date_range(for_date_time):

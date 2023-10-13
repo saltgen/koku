@@ -42,7 +42,7 @@ def read_ocp_csv(file_path: os.PathLike, usecols: list = None) -> pd.DataFrame:
         raise error
 
 
-def divide_csv_daily(file_path: os.PathLike, manifest_id: int):
+def divide_csv_daily(file_path: os.PathLike, destination_dir: os.PathLike, manifest_id: int):
     """
     Split local file into daily content.
     """
@@ -67,7 +67,7 @@ def divide_csv_daily(file_path: os.PathLike, manifest_id: int):
             manifest.report_tracker[file_prefix] = counter + 1
             manifest.save(update_fields=["report_tracker"])
         day_file = f"{file_prefix}.{counter}.csv"
-        day_filepath = file_path.parent.joinpath(day_file)
+        day_filepath = destination_dir.joinpath(day_file)
 
         df = data_frame[data_frame.interval_start.dt.date == date]
         df.to_csv(day_filepath, index=False, header=True)
@@ -82,7 +82,7 @@ def divide_csv_daily(file_path: os.PathLike, manifest_id: int):
     return daily_files
 
 
-def create_daily_archives(tracing_id, account, provider_uuid, filepath, manifest_id, start_date, context={}):
+def create_daily_archives(ocp_manifest: utils.OCPManifest, context: dict):
     """
     Create daily CSVs from incoming report and archive to S3.
 
@@ -95,59 +95,54 @@ def create_daily_archives(tracing_id, account, provider_uuid, filepath, manifest
         start_date (Datetime): The start datetime of incoming report
         context (Dict): Logging context dictionary
     """
-    manifest = CostUsageReportManifest.objects.get(id=manifest_id)
     daily_file_names = {}
-    if manifest.operator_version and not manifest.operator_daily_reports:
+    if ocp_manifest.version and not ocp_manifest.daily_reports:
         # operator_version and NOT operator_daily_reports is used for payloads received from
         # cost-mgmt-metrics-operators that are not generating daily reports
         # These reports are additive and cannot be split
-        daily_files = [{"filepath": filepath, "date": start_date, "num_hours": 0}]
+        daily_files = [{"filepath": ocp_manifest.current_file, "date": ocp_manifest.start, "num_hours": 0}]
     else:
         # we call divide_csv_daily for really old operators (those still relying on metering)
         # or for operators sending daily files
-        daily_files = divide_csv_daily(filepath, manifest.id)
+        daily_files = divide_csv_daily(
+            ocp_manifest.current_file, ocp_manifest.destination_dir, ocp_manifest.manifest_id
+        )
 
     if not daily_files:
-        daily_files = [{"filepath": filepath, "date": start_date, "num_hours": 0}]
+        # this is now wrong - deal with moving the empty file!!!!
+        daily_files = [{"filepath": ocp_manifest.current_file, "date": ocp_manifest.start, "num_hours": 0}]
 
     for daily_file in daily_files:
         # Push to S3
         s3_csv_path = get_path_prefix(
-            account, Provider.PROVIDER_OCP, provider_uuid, daily_file.get("date"), Config.CSV_DATA_TYPE
+            ocp_manifest.s3_schema_name,
+            Provider.PROVIDER_OCP,
+            ocp_manifest.provider_uuid,
+            daily_file.get("date"),
+            Config.CSV_DATA_TYPE,
         )
         filepath = daily_file.get("filepath")
         copy_local_report_file_to_s3_bucket(
-            tracing_id,
+            ocp_manifest.request_id,
             s3_csv_path,
             filepath,
             filepath.name,
-            manifest_id,
+            ocp_manifest.manifest_id,
             context,
         )
-        df = read_ocp_csv(
-            filepath, usecols=["report_period_end", "report_period_start", "interval_start", "interval_end"]
-        )
-        start = df.interval_start.min()
-        end = df.interval_end.max()
         daily_file_names[filepath] = {
-            "meta": {
-                "meta_reportdatestart": str(daily_file["date"]),
-                "meta_reportnumhours": str(daily_file["num_hours"]),
-            },
-            "dates": {
-                "report_start": start,
-                "report_end": end,
-            },
+            "meta_reportdatestart": str(daily_file["date"]),
+            "meta_reportnumhours": str(daily_file["num_hours"]),
         }
     return daily_file_names
 
 
-def process_cr(report_meta):
+def process_cr(manifest: utils.OCPManifest):
     """
     Process the manifest info.
 
     Args:
-        report_meta (Dict): The metadata from the manifest
+        manifest (Dict): The metadata from the manifest
 
     Returns:
         manifest_info (Dict): Dictionary containing the following:
@@ -157,7 +152,7 @@ def process_cr(report_meta):
             channel: (str or None)
             errors: (Dict or None)
     """
-    LOG.info(log_json(report_meta.get("tracing_id"), msg="Processing the manifest"))
+    LOG.info(log_json(manifest.request_id, msg="Processing the manifest"))
     operator_versions = {
         "5806b175a7b31e6ee112c798fa4222cc652b40a6": "costmanagement-metrics-operator:2.0.0",
         "e3450f6e3422b6c39c582028ec4ce19b8d09d57d": "costmanagement-metrics-operator:1.2.0",
@@ -190,19 +185,19 @@ def process_cr(report_meta):
         "0419bb957f5cdfade31e26c0f03b755528ec0d7f": "koku-metrics-operator:v0.9.1",
         "bfdc1e54e104c2a6c8bf830ab135cf56a97f41d2": "koku-metrics-operator:v0.9.0",
     }
-    version = report_meta.get("version")
     manifest_info = {
-        "cluster_id": report_meta.get("cluster_id"),
-        "operator_certified": report_meta.get("certified"),
+        "cluster_id": manifest.cluster_id,
+        "operator_certified": manifest.certified,
         "operator_version": operator_versions.get(
-            version, version  # if version is not defined in operator_versions, fallback to what is in the report-meta
+            manifest.version,
+            manifest.version,  # if version is not defined in operator_versions, fallback to what is in the report-meta
         ),
         "cluster_channel": None,
         "operator_airgapped": None,
         "operator_errors": None,
-        "operator_daily_reports": report_meta.get("daily_reports", False),
+        "operator_daily_reports": manifest.daily_reports,
     }
-    if cr_status := report_meta.get("cr_status"):
+    if cr_status := manifest.cr_status:
         manifest_info["cluster_channel"] = cr_status.get("clusterVersion")
         manifest_info["operator_airgapped"] = not cr_status.get("upload", {}).get("upload")
         errors = {}
@@ -354,16 +349,13 @@ class OCPReportDownloader(ReportDownloaderBase, DownloaderInterface):
         """Get full path for local report file."""
         return utils.get_local_file_name(report)
 
-    def _prepare_db_manifest_record(self, manifest):
+    def _prepare_db_manifest_record(self, manifest: utils.OCPManifest) -> int:
         """Prepare to insert or update the manifest DB record."""
-        assembly_id = manifest.get("uuid")
-
-        date_range = utils.month_date_range(manifest.get("date"))
+        date_range = utils.month_date_range(manifest.date)
         billing_str = date_range.split("-")[0]
         billing_start = datetime.strptime(billing_str, "%Y%m%d")
-        manifest_timestamp = manifest.get("date")
-        num_of_files = len(manifest.get("files") or [])
+        num_of_files = len(manifest.files)
         manifest_info = process_cr(manifest)
         return self._process_manifest_db_record(
-            assembly_id, billing_start, num_of_files, manifest_timestamp, **manifest_info
+            manifest.uuid, billing_start, num_of_files, manifest.date, **manifest_info
         )

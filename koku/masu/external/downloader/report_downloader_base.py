@@ -74,7 +74,7 @@ class ReportDownloaderBase:
 
     def _process_manifest_db_record(
         self, assembly_id, billing_start, num_of_files, manifest_modified_datetime, **kwargs
-    ):
+    ) -> int:
         """Insert or update the manifest DB record."""
         msg = f"Inserting/updating manifest in database for assembly_id: {assembly_id}"
         LOG.info(log_json(self.tracing_id, msg=msg))

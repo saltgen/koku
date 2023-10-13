@@ -20,6 +20,7 @@ from koku.feature_flags import UNLEASH_CLIENT
 from masu.config import Config as masu_config
 from masu.database.provider_db_accessor import ProviderDBAccessor
 from masu.prometheus_stats import KAFKA_CONNECTION_ERRORS_COUNTER
+from masu.util.ocp.common import OCPManifest
 
 
 LOG = logging.getLogger(__name__)
@@ -50,23 +51,23 @@ class ROSReportShipper:
 
     def __init__(
         self,
-        report_meta,
-        b64_identity,
-        context,
+        report_meta: OCPManifest,
+        b64_identity: str,
+        context: dict,
     ):
         self.b64_identity = b64_identity
-        self.manifest_id = report_meta["manifest_id"]
+        self.manifest_id = report_meta.manifest_id
         self.context = context | {"manifest_id": self.manifest_id}
-        self.source_id = str(report_meta["source_id"])
-        self.provider_uuid = str(report_meta["provider_uuid"])
-        self.request_id = report_meta["request_id"]
-        self.schema_name = report_meta["schema_name"]
+        self.source_id = report_meta.source_id
+        self.provider_uuid = report_meta.provider_uuid
+        self.request_id = report_meta.request_id
+        self.schema_name = report_meta.schema_name
         self.metadata = {
             "account": context["account"],
             "org_id": context["org_id"],
             "source_id": self.source_id,
             "provider_uuid": self.provider_uuid,
-            "cluster_uuid": report_meta["cluster_id"],
+            "cluster_uuid": report_meta.cluster_id,
         }
         self.s3_client = get_ros_s3_client()
         self.dh = DateHelper()

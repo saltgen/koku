@@ -16,6 +16,7 @@ import traceback
 from pathlib import Path
 from tarfile import ReadError
 from tarfile import TarFile
+from typing import Literal
 
 import pandas as pd
 import requests
@@ -38,6 +39,7 @@ from masu.database.report_manifest_db_accessor import ReportManifestDBAccessor
 from masu.external import UNCOMPRESSED
 from masu.external.downloader.ocp.ocp_report_downloader import create_daily_archives
 from masu.external.downloader.ocp.ocp_report_downloader import OCPReportDownloader
+from masu.external.downloader.ocp.ocp_report_downloader import read_ocp_csv
 from masu.external.ros_report_shipper import ROSReportShipper
 from masu.processor import is_customer_large
 from masu.processor._tasks.process import _process_report_file
@@ -77,7 +79,7 @@ def delivery_callback(err, msg):
         LOG.info("Validation message delivered.")
 
 
-def create_manifest_entries(report_meta, request_id, context):
+def create_manifest_entries(report_meta: utils.OCPManifest):
     """
     Creates manifest database entries for report processing tracking.
 
@@ -92,12 +94,12 @@ def create_manifest_entries(report_meta, request_id, context):
     """
 
     downloader = OCPReportDownloader(
-        report_meta.get("schema_name"),
-        report_meta.get("cluster_id"),
+        report_meta.schema_name,
+        report_meta.cluster_id,
         None,
-        provider_uuid=report_meta.get("provider_uuid"),
-        request_id=request_id,
-        account=context.get("account", "no_account"),
+        provider_uuid=report_meta.provider_uuid,
+        request_id=report_meta.request_id,
+        account=report_meta.account_id,
     )
     return downloader._prepare_db_manifest_record(report_meta)
 
@@ -208,19 +210,6 @@ def extract_payload_contents(request_id, tarball_path, context):
     return manifest_path[0], files
 
 
-def construct_daily_archives(request_id, context, report_meta, report_file_path):
-    """Build, upload and convert parquet reports."""
-    return create_daily_archives(
-        request_id,
-        report_meta["account"],
-        report_meta["provider_uuid"],
-        report_file_path,
-        report_meta["manifest_id"],
-        report_meta["date"],
-        context,
-    )
-
-
 def _get_source_id(provider_uuid):
     """Obtain the source id for a given provider uuid."""
     source = Sources.objects.filter(koku_uuid=provider_uuid).first()
@@ -229,7 +218,24 @@ def _get_source_id(provider_uuid):
     return None
 
 
-def extract_payload(request_id, url, b64_identity, context):  # noqa: C901
+def handle_ros_payload(
+    b64_identity: str, report: utils.OCPManifest, payload_dir: os.PathLike, payload_files: list[str], context: dict
+) -> None:
+    ros_reports = [
+        (ros_file, payload_dir.joinpath(ros_file))
+        for ros_file in report.resource_optimization_files
+        if ros_file in payload_files
+    ]
+    ros_processor = ROSReportShipper(report, b64_identity, context)
+    try:
+        ros_processor.process_manifest_reports(ros_reports)
+    except Exception as e:
+        # If a ROS report fails to process, this should not prevent Koku processing from continuing.
+        msg = f"ROS reports not processed for payload. Reason: {e}"
+        LOG.warning(log_json(report.tracing_id, msg=msg, context=context), exc_info=e)
+
+
+def extract_payload(request_id, url, b64_identity, context) -> list[utils.OCPManifest]:  # noqa: C901
     """
     Extract OCP usage report payload into local directory structure.
 
@@ -280,8 +286,9 @@ def extract_payload(request_id, url, b64_identity, context):  # noqa: C901
     payload_filepath = download_payload(request_id, url, context)
     manifest_filename, payload_files = extract_payload_contents(request_id, payload_filepath, context)
 
+    payload_dir = payload_filepath.parent
     # Open manifest.json file and build the payload dictionary.
-    full_manifest_path = Path(payload_filepath.parent, manifest_filename)
+    full_manifest_path = payload_dir.joinpath(manifest_filename)
     ocp_manifest = utils.get_ocp_manifest(full_manifest_path, request_id)
 
     context |= {
@@ -302,81 +309,61 @@ def extract_payload(request_id, url, b64_identity, context):  # noqa: C901
         msg = f"Recieved unexpected OCP report from {ocp_manifest.cluster_id}"
         LOG.warning(log_json(request_id, msg=msg, context=context))
         shutil.rmtree(payload_filepath.parent)
-        return None, ocp_manifest.uuid
+        return []
 
-    schema_name = account.get("schema_name")
-    provider_type = account.get("provider_type")
-    source_id = None
-    provider_uuid = account.get("provider_uuid")
-    if provider_uuid:
-        source_id = _get_source_id(provider_uuid)
-    context["provider_type"] = provider_type
-    context["schema"] = schema_name
-    ocp_manifest["source_id"] = source_id
-    ocp_manifest["provider_uuid"] = provider_uuid
-    ocp_manifest["provider_type"] = provider_type
-    ocp_manifest["schema_name"] = schema_name
-    # Existing schema will start with acct and we strip that prefix for use later
-    # new customers include the org prefix in case an org-id and an account number might overlap
-    ocp_manifest["account"] = schema_name.strip("acct")
-    ocp_manifest["request_id"] = request_id
-    ocp_manifest["tracing_id"] = ocp_manifest.uuid
+    ocp_manifest = ocp_manifest.model_copy(update=account, deep=True)
 
-    # Create directory tree for report.
-    usage_month = utils.month_date_range(ocp_manifest.get("date"))
-    destination_dir = Path(Config.INSIGHTS_LOCAL_REPORT_DIR, ocp_manifest.get("cluster_id"), usage_month)
-    os.makedirs(destination_dir, exist_ok=True)
+    context["provider_type"] = ocp_manifest.provider_type
+    context["schema_name"] = ocp_manifest.schema_name
+    ocp_manifest.source_id = _get_source_id(ocp_manifest.provider_uuid)
 
-    # Copy manifest
-    manifest_destination_path = Path(destination_dir, ocp_manifest["manifest_path"].name)
-    shutil.copy(ocp_manifest.get("manifest_path"), manifest_destination_path)
+    ocp_manifest.destination_dir = Path(Config.INSIGHTS_LOCAL_REPORT_DIR, ocp_manifest.cluster_id)
+    os.makedirs(ocp_manifest.destination_dir, exist_ok=True)
 
     # Save Manifest
-    ocp_manifest["manifest_id"] = create_manifest_entries(ocp_manifest, request_id, context)
+    ocp_manifest.manifest_id = create_manifest_entries(ocp_manifest)
 
-    # Copy report payload
-    report_metas = []
-    ros_reports = []
-    manifest_ros_files = ocp_manifest.get("resource_optimization_files") or []
-    manifest_files = ocp_manifest.get("files") or []
-    for ros_file in manifest_ros_files:
-        if ros_file in payload_files:
-            ros_reports.append((ros_file, payload_filepath.with_name(ros_file)))
-    ros_processor = ROSReportShipper(ocp_manifest, b64_identity, context)
-    try:
-        ros_processor.process_manifest_reports(ros_reports)
-    except Exception as e:
-        # If a ROS report fails to process, this should not prevent Koku processing from continuing.
-        msg = f"ROS reports not processed for payload. Reason: {e}"
-        LOG.warning(log_json(request_id, msg=msg, context=context))
+    handle_ros_payload(b64_identity, ocp_manifest, payload_dir, payload_files, context)
 
-    for report_file in manifest_files:
-        current_meta = ocp_manifest.copy()
-        payload_source_path = Path(payload_filepath.parent, report_file)
-        payload_destination_path = Path(destination_dir, report_file)
-        try:
-            shutil.copy(payload_source_path, payload_destination_path)
-        except FileNotFoundError:
-            msg = f"File {str(report_file)} has not downloaded yet."
+    reports = []
+    starts = set()
+    ends = set()
+    for report_file in ocp_manifest.files:
+        if report_file not in payload_files:
+            msg = f"file {str(report_file)} has not downloaded yet"
             LOG.debug(log_json(request_id, msg=msg, context=context))
             continue
-        current_meta["current_file"] = payload_destination_path
-        record_all_manifest_files(ocp_manifest["manifest_id"], ocp_manifest.get("files"), ocp_manifest.uuid)
-        if record_report_status(ocp_manifest["manifest_id"], report_file, ocp_manifest.uuid, context):
+
+        current_meta = ocp_manifest.model_copy()
+        current_meta.current_file = payload_dir.joinpath(report_file)
+
+        df = read_ocp_csv(
+            current_meta.current_file,
+            usecols=["report_period_end", "report_period_start", "interval_start", "interval_end"],
+        )
+        starts.add(current_meta.start if df.interval_start.empty else df.interval_start.min())
+        ends.add(current_meta.end if df.interval_end.empty else df.interval_end.max())
+
+        record_all_manifest_files(current_meta.manifest_id, current_meta.files, current_meta.uuid)
+        if record_report_status(current_meta.manifest_id, report_file, current_meta.uuid, context):
             # Report already processed
             continue
-        msg = f"Successfully extracted OCP for {ocp_manifest.get('cluster_id')}/{usage_month}"
-        LOG.info(log_json(request_id, msg=msg, context=context))
-        split_files = construct_daily_archives(request_id, context, ocp_manifest, payload_destination_path)
-        current_meta["split_files"] = list(split_files)
-        current_meta["ocp_files_to_process"] = {file.stem: values["meta"] for file, values in split_files.items()}
-        current_meta["start"], current_meta["end"] = get_report_dates(
-            [value["dates"] for value in split_files.values()], current_meta["start"], current_meta["end"]
-        )
-        report_metas.append(current_meta)
+        msg = "successfully extracted OCP report file"
+        LOG.info(log_json(request_id, msg=msg, context=context, report_file=report_file))
+        split_files = create_daily_archives(current_meta, context)
+        current_meta.split_files = list(split_files)
+        current_meta.ocp_files_to_process = {file.stem: values for file, values in split_files.items()}
+        reports.append(current_meta)
     # Remove temporary directory and files
     shutil.rmtree(payload_filepath.parent)
-    return report_metas, ocp_manifest.uuid
+
+    # fix the start and end of the reports based on the files in the payload
+    start = min(starts)
+    end = max(ends)
+    for report in reports:
+        report.start = start
+        report.end = end
+    return reports
 
 
 def get_report_dates(report_dates, start, end):
@@ -414,7 +401,7 @@ def send_confirmation(request_id, status):  # pragma: no cover
     producer.poll(0)
 
 
-def handle_message(kmsg):
+def handle_message(request_id: str, kmsg: dict, context: dict) -> tuple[Literal, list[utils.OCPManifest], os.PathLike]:
     """
     Handle messages from message pending queue.
 
@@ -437,7 +424,7 @@ def handle_message(kmsg):
 
 
     Args:
-        kmsg - Upload Service message containing usage payload information.
+        value - Upload Service message containing usage payload information.
 
     Returns:
         (String, [dict]) - String: Upload Service confirmation status
@@ -453,15 +440,10 @@ def handle_message(kmsg):
                                  current_file: String
 
     """
-    value = json.loads(kmsg.value().decode("utf-8"))
-    request_id = value.get("request_id", "no_request_id")
-    account = value.get("account", "no_account")
-    org_id = value.get("org_id", "no_org_id")
-    context = {"account": account, "org_id": org_id}
     try:
-        LOG.info(log_json(request_id, msg="extracting payload for msg", context=context, **value))
-        report_metas, manifest_uuid = extract_payload(request_id, value["url"], value["b64_identity"], context)
-        return SUCCESS_CONFIRM_STATUS, report_metas, manifest_uuid
+        LOG.info(log_json(request_id, msg="extracting payload for msg", context=context, **kmsg))
+        reports = extract_payload(request_id, kmsg["url"], kmsg["b64_identity"], context)
+        return SUCCESS_CONFIRM_STATUS, reports
     except (OperationalError, InterfaceError) as error:
         close_and_set_db_connection()
         msg = f"Unable to extract payload, db closed. {type(error).__name__}: {error}"
@@ -471,10 +453,10 @@ def handle_message(kmsg):
         traceback.print_exc()
         msg = f"Unable to extract payload. Error: {type(error).__name__}: {error}"
         LOG.warning(log_json(request_id, msg=msg, context=context))
-        return FAILURE_CONFIRM_STATUS, None, None
+        return FAILURE_CONFIRM_STATUS, []
 
 
-def summarize_manifest(report_meta, manifest_uuid):
+def summarize_manifest(report_meta: utils.OCPManifest):
     """
     Kick off manifest summary when all report files have completed line item processing.
 
@@ -490,49 +472,51 @@ def summarize_manifest(report_meta, manifest_uuid):
         Celery Async UUID.
 
     """
-    manifest_id = report_meta.get("manifest_id")
-    schema = report_meta.get("schema_name")
-    start_date = report_meta.get("start")
-    end_date = report_meta.get("end")
+
+    start_date = report_meta.start
+    end_date = report_meta.end
 
     context = {
-        "provider_uuid": report_meta.get("provider_uuid"),
-        "schema": schema,
-        "cluster_id": report_meta.get("cluster_id"),
+        "provider_uuid": report_meta.provider_uuid,
+        "schema": report_meta.schema_name,
+        "cluster_id": report_meta.cluster_id,
         "start_date": start_date,
         "end_date": end_date,
     }
 
     ocp_processing_queue = OCP_QUEUE
-    if is_customer_large(schema):
+    if is_customer_large(report_meta.schema_name):
         ocp_processing_queue = OCP_QUEUE_XL
 
-    if not MANIFEST_ACCESSOR.manifest_ready_for_summary(manifest_id):
+    if not MANIFEST_ACCESSOR.manifest_ready_for_summary(report_meta.manifest_id):
         return
 
     new_report_meta = {
-        "schema": schema,
-        "schema_name": schema,
-        "provider_type": report_meta.get("provider_type"),
-        "provider_uuid": report_meta.get("provider_uuid"),
-        "manifest_id": manifest_id,
-        "manifest_uuid": manifest_uuid,
+        "schema_name": report_meta.schema_name,
+        "provider_type": report_meta.provider_type,
+        "provider_uuid": report_meta.provider_uuid,
+        "manifest_id": report_meta.manifest_id,
+        "manifest_uuid": report_meta.uuid,
         "start": start_date,
         "end": end_date,
     }
     if not (start_date or end_date):
         # we cannot process without start and end dates
         LOG.info(
-            log_json(manifest_uuid, msg="missing start or end dates - cannot summarize ocp reports", context=context)
+            log_json(
+                report_meta.request_id,
+                msg="missing start or end dates - cannot summarize ocp reports",
+                context=context,
+            )
         )
         return
 
     if "0001-01-01 00:00:00+00:00" not in [str(start_date), str(end_date)]:
         # we have valid dates, so we can summarize the payload
-        LOG.info(log_json(manifest_uuid, msg="summarizing ocp reports", context=context))
+        LOG.info(log_json(report_meta.request_id, msg="summarizing ocp reports", context=context))
         return summarize_reports.s([new_report_meta], ocp_processing_queue).apply_async(queue=ocp_processing_queue)
 
-    cr_status = report_meta.get("cr_status", {})
+    cr_status = report_meta.cr_status
     if data_collection_message := cr_status.get("reports", {}).get("data_collection_message", ""):
         # remove potentially sensitive info from the error message
         msg = f'data collection error [operator]: {re.sub("{[^}]+}", "{***}", data_collection_message)}'
@@ -540,10 +524,10 @@ def summarize_manifest(report_meta, manifest_uuid):
         # The full CR status is logged below, but we should limit our alert to just the query.
         # We can check the full manifest to get the full error.
         LOG.error(msg)
-        LOG.info(log_json(manifest_uuid, msg=msg, context=context))
+        LOG.info(log_json(report_meta.request_id, msg=msg, context=context))
     LOG.info(
         log_json(
-            manifest_uuid,
+            report_meta.request_id,
             msg="cr status for invalid manifest",
             context=context,
             **cr_status,
@@ -551,7 +535,7 @@ def summarize_manifest(report_meta, manifest_uuid):
     )
 
 
-def process_report(request_id, report):
+def process_report(report: utils.OCPManifest):
     """
     Process line item report.
 
@@ -579,35 +563,28 @@ def process_report(request_id, report):
         True if line item report processing is complete.
 
     """
-    schema_name = report.get("schema_name")
-    manifest_id = report.get("manifest_id")
-    provider_uuid = str(report.get("provider_uuid"))
-    provider_type = report.get("provider_type")
-    date = report.get("date")
-
     # The create_table flag is used by the ParquetReportProcessor
     # to create a Hive/Trino table.
     report_dict = {
-        "file": report.get("current_file"),
-        "split_files": report.get("split_files"),
-        "ocp_files_to_process": report.get("ocp_files_to_process"),
+        "file": report.current_file,
+        "split_files": report.split_files,
+        "ocp_files_to_process": report.ocp_files_to_process,
         "compression": UNCOMPRESSED,
-        "manifest_id": manifest_id,
-        "provider_uuid": provider_uuid,
-        "request_id": request_id,
-        "tracing_id": report.get("tracing_id"),
-        "provider_type": "OCP",
-        "start_date": date,
+        "manifest_id": report.manifest_id,
+        "provider_uuid": report.provider_uuid,
+        "tracing_id": report.request_id,
+        "provider_type": report.provider_type,
+        "start_date": report.date,
         "create_table": True,
     }
     try:
-        return _process_report_file(schema_name, provider_type, report_dict)
+        return _process_report_file(report.schema_name, report.provider_type, report_dict)
     except NotImplementedError as err:
         LOG.info(f"NotImplementedError: {str(err)}")
         return True
 
 
-def report_metas_complete(report_metas):
+def report_metas_complete(report_metas: list[utils.OCPManifest]) -> bool:
     """
     Verify if all reports from the ingress payload have been processed.
 
@@ -623,7 +600,7 @@ def report_metas_complete(report_metas):
         True if all report files for the payload have completed line item processing.
 
     """
-    return all(report_meta.get("process_complete") for report_meta in report_metas)
+    return all(report_meta.process_complete for report_meta in report_metas)
 
 
 def process_messages(msg):
@@ -645,39 +622,36 @@ def process_messages(msg):
 
     """
     process_complete = False
-    status, report_metas, manifest_uuid = handle_message(msg)
+    kmsg = json.loads(msg.value().decode("utf-8"))
+    request_id = kmsg.get("request_id")
+    context = {"account": kmsg.get("account"), "org_id": kmsg.get("org_id")}
+    status, reports = handle_message(request_id, kmsg, context)
 
-    value = json.loads(msg.value().decode("utf-8"))
-    request_id = value.get("request_id", "no_request_id")
-    tracing_id = manifest_uuid or request_id
-    if report_metas:
-        for report_meta in report_metas:
-            if report_meta.get("daily_reports") and len(report_meta.get("files")) != MANIFEST_ACCESSOR.number_of_files(
-                report_meta.get("manifest_id")
-            ):
-                # we have not received all of the daily files yet, so don't process them
-                break
-            report_meta["process_complete"] = process_report(request_id, report_meta)
-            LOG.info(
-                log_json(
-                    tracing_id,
-                    msg=f"Processing: {report_meta.get('current_file')} complete.",
-                    ocp_files_to_process=report_meta.get("ocp_files_to_process"),
-                )
+    for report in reports:
+        if report.daily_reports and len(report.files) != MANIFEST_ACCESSOR.number_of_files(report.manifest_id):
+            # we have not received all of the daily files yet, so don't process them
+            break
+        report.process_complete = process_report(report)
+        LOG.info(
+            log_json(
+                request_id,
+                msg=f"Processing: {report.current_file} complete.",
+                ocp_files_to_process=report.ocp_files_to_process,
             )
-        process_complete = report_metas_complete(report_metas)
-        summary_task_id = summarize_manifest(report_meta, tracing_id)
-        if summary_task_id:
-            LOG.info(log_json(tracing_id, msg=f"Summarization celery uuid: {summary_task_id}"))
+        )
+    if reports:
+        process_complete = report_metas_complete(reports)
+        if summary_task_id := summarize_manifest(report):
+            LOG.info(log_json(request_id, msg=f"Summarization celery uuid: {summary_task_id}"))
 
     if status and not settings.DEBUG:
-        if report_metas:
-            file_list = [meta.get("current_file") for meta in report_metas]
+        if reports:
+            file_list = [meta.current_file for meta in reports]
             files_string = ",".join(map(str, file_list))
-            LOG.info(log_json(tracing_id, msg=f"Sending Ingress Service confirmation for: {files_string}"))
+            LOG.info(log_json(request_id, msg=f"Sending Ingress Service confirmation for: {files_string}"))
         else:
-            LOG.info(log_json(tracing_id, msg=f"Sending Ingress Service confirmation for: {value}"))
-        send_confirmation(value["request_id"], status)
+            LOG.info(log_json(request_id, msg=f"Sending Ingress Service confirmation for: {kmsg}"))
+        send_confirmation(request_id, status)
 
     return process_complete
 
