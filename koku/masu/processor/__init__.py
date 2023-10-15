@@ -40,6 +40,19 @@ def is_cloud_source_processing_disabled(account):  # pragma: no cover
     return res
 
 
+# def check_requeue_celery_task(task_name, task_queue, tasks, kwargs):
+#     context = {
+#         "task_name": task_name,
+#         "task_queue": task_queue
+#     }
+#     res = UNLEASH_CLIENT.is_enabled("cost-management.backend.requeue_celery_tasks", context)
+#     return res
+
+
+def check_requeue_celery_task(task_name, task_queue, tasks, kwargs):
+    return True
+
+
 def is_summary_processing_disabled(account):  # pragma: no cover
     """Disable summary processing."""
     account = convert_account(account)

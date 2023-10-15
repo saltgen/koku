@@ -225,6 +225,17 @@
             ],
             "variants": [],
             "createdAt": "2023-04-06T09:40:54.492Z"
+        },
+        {
+            "name": "cost-management.backend.requeue_celery_tasks",
+            "description": "Enable the all labels column for OCP cost endpoint.",
+            "type": "permission",
+            "project": "default",
+            "enabled": false,
+            "stale": false,
+            "strategies": [],
+            "variants": [],
+            "createdAt": "2023-10-012T09:40:54.492Z"
         }
     ],
     "strategies": [
@@ -251,6 +262,31 @@
                     "required": false
                 }
             ]
-        }
+        },
+        {
+            "name": "celery-task-name-strategy",
+            "description": "Enablement based on source uuid",
+            "parameters": [
+                {
+                    "name": "task-name",
+                    "type": "list",
+                    "description": "UUID of the source.",
+                    "required": false
+                }
+            ]
+        },
+        {
+            "name": "celery-queue-name-strategy",
+            "description": "Enablement based on source uuid",
+            "parameters": [
+                {
+                    "name": "queue-name",
+                    "type": "list",
+                    "description": "UUID of the source.",
+                    "required": false
+                }
+            ]
+        },
+
     ]
 }

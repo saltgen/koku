@@ -34,6 +34,19 @@ class LogErrorsTask(Task):  # pragma: no cover
         LOG.exception("Task failed: %s", exc, exc_info=exc)
         super().on_failure(exc, task_id, args, kwargs, einfo)
 
+    def __call__(self, *args, **kwargs):
+        from masu.processor import check_requeue_celery_task
+
+        if check_requeue_celery_task(self.name, self.queue, args, kwargs):
+            LOG.info("\n\n")
+            LOG.info(f"args: {args}")
+            LOG.info(f"kwargs: {kwargs}")
+            LOG.info(f"task.name: {self.name}")
+            LOG.info(f"task.queue: {self.queue}")
+            self.apply_async(args, kwargs, countdown=15)
+            return
+        return self.run(args, kwargs)
+
 
 class LoggingCelery(Celery):
     """Log Celery task exceptions."""
