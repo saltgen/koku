@@ -10,6 +10,7 @@ from celery import Celery
 from celery import Task
 from celery.schedules import crontab
 from celery.signals import celeryd_after_setup
+from celery.signals import task_postrun
 from celery.signals import worker_process_init
 from celery.signals import worker_process_shutdown
 from croniter import croniter
@@ -26,6 +27,27 @@ from koku.probe_server import start_probe_server
 LOG = logging.getLogger(__name__)
 
 
+@task_postrun.connect
+def check_unleash_to_add_pause(task_id, task, **kwargs):
+    """We use this function to check to see if we should
+    pause work before we take another task from the queue.
+    """
+    LOG.info("\n\n\n\n\n")
+    LOG.info(kwargs)
+    pause_flag = "cost-management.backend.requeue_celery_tasks"
+    from koku.feature_flags import UNLEASH_CLIENT
+
+    context = {"task_name": task.name, "task_queue": task.queue}
+    iteration = 0
+    while UNLEASH_CLIENT.is_enabled(pause_flag, context):
+        LOG.info(task_id)
+        LOG.info(iteration)
+        LOG.info("Initiating a 30-second sleep...")
+        time.sleep(30)
+        iteration += 1
+    LOG.info("------------------------------------------------------------")
+
+
 class LogErrorsTask(Task):  # pragma: no cover
     """Log Celery task exceptions."""
 
@@ -33,19 +55,6 @@ class LogErrorsTask(Task):  # pragma: no cover
         """Log exceptions when a celery task fails."""
         LOG.exception("Task failed: %s", exc, exc_info=exc)
         super().on_failure(exc, task_id, args, kwargs, einfo)
-
-    def __call__(self, *args, **kwargs):
-        from masu.processor import check_requeue_celery_task
-
-        if check_requeue_celery_task(self.name, self.queue, args, kwargs):
-            LOG.info("\n\n")
-            LOG.info(f"args: {args}")
-            LOG.info(f"kwargs: {kwargs}")
-            LOG.info(f"task.name: {self.name}")
-            LOG.info(f"task.queue: {self.queue}")
-            self.apply_async(args, kwargs, countdown=15)
-            return
-        return self.run(args, kwargs)
 
 
 class LoggingCelery(Celery):
