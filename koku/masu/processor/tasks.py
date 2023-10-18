@@ -47,8 +47,6 @@ from masu.processor._tasks.download import _get_report_files
 from masu.processor._tasks.process import _process_report_file
 from masu.processor._tasks.remove_expired import _remove_expired_data
 from masu.processor.cost_model_cost_updater import CostModelCostUpdater
-from masu.processor.ocp.ocp_cloud_parquet_summary_updater import DELETE_TABLE
-from masu.processor.ocp.ocp_cloud_parquet_summary_updater import TRUNCATE_TABLE
 from masu.processor.parquet.ocp_cloud_parquet_report_processor import OCPCloudParquetReportProcessor
 from masu.processor.report_processor import ReportProcessorDBError
 from masu.processor.report_processor import ReportProcessorError
@@ -58,10 +56,14 @@ from masu.processor.report_summary_updater import ReportSummaryUpdaterProviderNo
 from masu.processor.worker_cache import rate_limit_tasks
 from masu.processor.worker_cache import WorkerCache
 from masu.util.aws.common import remove_files_not_in_set_from_s3_bucket
+from masu.util.common import date_range_pair
 from masu.util.common import execute_trino_query
 from masu.util.common import get_path_prefix
 from masu.util.gcp.common import deduplicate_reports_for_gcp
 from masu.util.oci.common import deduplicate_reports_for_oci
+
+# from masu.processor.ocp.ocp_cloud_parquet_summary_updater import DELETE_TABLE
+# from masu.processor.ocp.ocp_cloud_parquet_summary_updater import TRUNCATE_TABLE
 
 
 LOG = logging.getLogger(__name__)
@@ -446,13 +448,13 @@ def update_summary_tables(  # noqa: C901
     is_large_customer = is_customer_large(schema)
     is_large_customer_rate_limited = is_rate_limit_customer_large(schema)
     fallback_update_summary_tables_queue = UPDATE_SUMMARY_TABLES_QUEUE
-    fallback_delete_truncate_queue = DELETE_TRUNCATE_QUEUE
+    # fallback_delete_truncate_queue = DELETE_TRUNCATE_QUEUE
     fallback_update_cost_model_queue = UPDATE_COST_MODEL_COSTS_QUEUE
     fallback_mark_manifest_complete_queue = MARK_MANIFEST_COMPLETE_QUEUE
     timeout = settings.WORKER_CACHE_TIMEOUT
     if is_large_customer:
         fallback_update_summary_tables_queue = UPDATE_SUMMARY_TABLES_QUEUE_XL
-        fallback_delete_truncate_queue = DELETE_TRUNCATE_QUEUE_XL
+        # fallback_delete_truncate_queue = DELETE_TRUNCATE_QUEUE_XL
         fallback_update_cost_model_queue = UPDATE_COST_MODEL_COSTS_QUEUE_XL
         fallback_mark_manifest_complete_queue = MARK_MANIFEST_COMPLETE_QUEUE_XL
         timeout = settings.WORKER_CACHE_LARGE_CUSTOMER_TIMEOUT
@@ -535,49 +537,32 @@ def update_summary_tables(  # noqa: C901
         with CostModelDBAccessor(schema, provider_uuid) as cost_model_accessor:
             cost_model = cost_model_accessor.cost_model
 
-    # Create queued tasks for each OpenShift on Cloud cluster
-    delete_signature_list = []
-    if ocp_on_cloud_infra_map:
-        trunc_delete_map = updater._ocp_cloud_updater.determine_truncates_and_deletes(start_date, end_date)
-        for table_name, operation in trunc_delete_map.items():
-            delete_signature_list.append(
-                delete_openshift_on_cloud_data.si(
-                    schema,
-                    provider_uuid,
-                    start_date,
-                    end_date,
-                    table_name,
-                    operation,
-                    manifest_id=manifest_id,
-                    tracing_id=tracing_id,
-                ).set(queue=queue_name or fallback_delete_truncate_queue)
-            )
-
     signature_list = []
     for openshift_provider_uuid, infrastructure_tuple in ocp_on_cloud_infra_map.items():
         infra_provider_uuid = infrastructure_tuple[0]
         infra_provider_type = infrastructure_tuple[1]
-        signature_list.append(
-            update_openshift_on_cloud.si(
-                schema,
-                openshift_provider_uuid,
-                infra_provider_uuid,
-                infra_provider_type,
-                str(start_date),
-                str(end_date),
-                manifest_id=manifest_id,
-                queue_name=queue_name,
-                synchronous=synchronous,
-                tracing_id=tracing_id,
-            ).set(queue=queue_name or fallback_update_summary_tables_queue)
-        )
+        # Break down our summary tasks for each OpenShift on Cloud cluster with trino date steps
+        for start, end in date_range_pair(start_date, end_date, step=1):
+            signature_list.append(
+                update_openshift_on_cloud.si(
+                    schema,
+                    openshift_provider_uuid,
+                    infra_provider_uuid,
+                    infra_provider_type,
+                    str(start),
+                    str(end),
+                    manifest_id=manifest_id,
+                    queue_name=queue_name,
+                    synchronous=synchronous,
+                    tracing_id=tracing_id,
+                ).set(queue=queue_name or fallback_update_summary_tables_queue)
+            )
 
     # Apply OCP on Cloud tasks
     if signature_list:
         LOG.info(log_json(tracing_id, msg="chaining deletes and summaries", context=context))
-        deletes = group(delete_signature_list)
         summaries = group(signature_list)
-        c = chain(deletes, summaries)
+        c = chain(summaries)
         if synchronous:
             c.apply()
         else:
@@ -610,26 +595,6 @@ def update_summary_tables(  # noqa: C901
 
     if not synchronous:
         worker_cache.release_single_task(task_name, cache_args)
-
-
-@celery_app.task(name="masu.processor.tasks.delete_openshift_on_cloud_data", queue=DELETE_TRUNCATE_QUEUE)  # noqa: C901
-def delete_openshift_on_cloud_data(
-    schema_name,
-    infrastructure_provider_uuid,
-    start_date,
-    end_date,
-    table_name,
-    operation,
-    manifest_id=None,
-    tracing_id=None,
-):
-    """Clear existing data from tables for date range."""
-    updater = ReportSummaryUpdater(schema_name, infrastructure_provider_uuid, manifest_id, tracing_id)
-
-    if operation == TRUNCATE_TABLE:
-        updater._ocp_cloud_updater.truncate_summary_table_data(table_name)
-    elif operation == DELETE_TABLE:
-        updater._ocp_cloud_updater.delete_summary_table_data(start_date, end_date, table_name)
 
 
 @celery_app.task(
@@ -707,6 +672,8 @@ def update_openshift_on_cloud(  # noqa: C901
 
     try:
         updater = ReportSummaryUpdater(schema_name, infrastructure_provider_uuid, manifest_id, tracing_id)
+        # Delete from postgres summary tables for range prior to inserts
+        updater._ocp_cloud_updater.delete_summary_table_data(start_date, end_date, openshift_provider_uuid)
         updater.update_openshift_on_cloud_summary_tables(
             start_date,
             end_date,

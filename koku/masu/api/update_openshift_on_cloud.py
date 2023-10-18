@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from celery import chain
 from celery import group
+from django.conf import settings
 from django.views.decorators.cache import never_cache
 from rest_framework import status
 from rest_framework.decorators import api_view
@@ -21,13 +22,11 @@ from rest_framework.settings import api_settings
 from api.provider.models import Provider
 from api.utils import get_months_in_date_range
 from masu.processor import is_customer_large
-from masu.processor.ocp.ocp_cloud_parquet_summary_updater import DELETE_TABLE
-from masu.processor.ocp.ocp_cloud_parquet_summary_updater import OCPCloudParquetReportSummaryUpdater
-from masu.processor.tasks import delete_openshift_on_cloud_data
 from masu.processor.tasks import PRIORITY_QUEUE
 from masu.processor.tasks import PRIORITY_QUEUE_XL
 from masu.processor.tasks import QUEUE_LIST
 from masu.processor.tasks import update_openshift_on_cloud as update_openshift_on_cloud_task
+from masu.util.common import date_range_pair
 
 LOG = logging.getLogger(__name__)
 REPORT_DATA_KEY = "Report Data Task IDs"
@@ -79,41 +78,25 @@ def update_openshift_on_cloud(request):
         infra_type = provider.infrastructure.infrastructure_type
 
         months = get_months_in_date_range(start=start_date, end=end_date)
-        infra_provider = Provider.objects.get(uuid=infra_provider_uuid)
-        updater = OCPCloudParquetReportSummaryUpdater(schema_name, infra_provider, None)
         for month in months:
             tracing_id = uuid4()
-            delete_signature_list = []
-            trunc_delete_map = updater.determine_truncates_and_deletes(month[0], month[1])
-            for table, operation in trunc_delete_map.items():
-                delete_params = {
+            for start, end in date_range_pair(month[0], month[1], step=settings.TRINO_DATE_STEP):
+                summary_params = {
                     "schema_name": schema_name,
+                    "openshift_provider_uuid": openshift_provider_uuid,
                     "infrastructure_provider_uuid": infra_provider_uuid,
-                    "start_date": month[0],
-                    "end_date": month[1],
-                    "table_name": table,
-                    "operation": operation,
+                    "infrastructure_provider_type": infra_type,
+                    "start_date": start,
+                    "end_date": end,
                     "queue_name": queue_name,
                     "tracing_id": tracing_id,
                 }
-                delete_signature_list.append(delete_openshift_on_cloud_data.si(**delete_params))
-            summary_params = {
-                "schema_name": schema_name,
-                "openshift_provider_uuid": openshift_provider_uuid,
-                "infrastructure_provider_uuid": infra_provider_uuid,
-                "infrastructure_provider_type": infra_type,
-                "start_date": month[0],
-                "end_date": month[1],
-                "queue_name": queue_name,
-                "tracing_id": tracing_id,
-            }
-            LOG.info("Triggering update_openshift_on_cloud task with params:")
-            LOG.info(params)
-            summary_signature = [update_openshift_on_cloud_task.si(**summary_params)]
+                LOG.info("Triggering update_openshift_on_cloud task with params:")
+                LOG.info(params)
+                summary_signature = [update_openshift_on_cloud_task.si(**summary_params)]
 
-            deletes = group(delete_signature_list)
             summaries = group(summary_signature)
-            c = chain(deletes, summaries)
+            c = chain(summaries)
 
             async_result = c.apply_async(queue=queue_name or fallback_queue)
             async_results.append({str(month): str(async_result)})

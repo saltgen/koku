@@ -8,7 +8,6 @@ import logging
 from decimal import Decimal
 
 from dateutil import parser
-from django.conf import settings
 from django_tenants.utils import schema_context
 
 from api.common import log_json
@@ -26,7 +25,6 @@ from masu.processor.ocp.ocp_cloud_updater_base import OCPCloudUpdaterBase
 from masu.processor.ocp.ocp_cost_model_cost_updater import OCPCostModelCostUpdater
 from masu.util.aws.common import get_bills_from_provider as aws_get_bills_from_provider
 from masu.util.azure.common import get_bills_from_provider as azure_get_bills_from_provider
-from masu.util.common import date_range_pair
 from masu.util.gcp.common import get_bills_from_provider as gcp_get_bills_from_provider
 from masu.util.ocp.common import get_cluster_alias_from_cluster_id
 from masu.util.ocp.common import get_cluster_id_from_provider
@@ -136,22 +134,23 @@ class OCPCloudParquetReportSummaryUpdater(PartitionHandlerMixin, OCPCloudUpdater
 
         return trunc_delete_map
 
-    def delete_summary_table_data(self, start_date, end_date, table):
+    def delete_summary_table_data(self, start_date, end_date, openshift_provider_uuid):
         """Clear out existing data in summary tables."""
-        filters = {"source_uuid": str(self._provider.uuid)}
+        cluster_id = get_cluster_id_from_provider(openshift_provider_uuid)
         dh = DateHelper()
         month_start = dh.month_start(start_date)
         with self.db_accessor(self._schema) as accessor:
-            if table == self.daily_summary_table._meta.db_table:
-                with schema_context(self._schema):
-                    bills = accessor.bills_for_provider_uuid(self._provider.uuid, start_date=month_start)
-                    current_bill_id = bills.first().id if bills else None
-                filters = {
-                    "cost_entry_bill_id": current_bill_id
-                }  # Use cost_entry_bill_id to leverage DB index on DELETE
-            accessor.delete_line_item_daily_summary_entries_for_date_range_raw(
-                self._provider.uuid, start_date, end_date, table=table, filters=filters
-            )
+            for table in self.ui_summary_tables:
+                filters = {"source_uuid": str(self._provider.uuid), "cluster_id": cluster_id}
+                if table == self.daily_summary_table._meta.db_table:
+                    with schema_context(self._schema):
+                        bills = accessor.bills_for_provider_uuid(self._provider.uuid, start_date=month_start)
+                        current_bill_id = bills.first().id if bills else None
+                        # Use cost_entry_bill_id to leverage DB index on DELETE
+                        filters = {"cost_entry_bill_id": current_bill_id, "cluster_id": cluster_id}
+                accessor.delete_line_item_daily_summary_entries_for_date_range_raw(
+                    self._provider.uuid, start_date, end_date, table=table, filters=filters
+                )
 
     def truncate_summary_table_data(self, partition_name):
         """Clear out existing data in summary tables by TRUNCATE."""
@@ -282,37 +281,33 @@ class OCPCloudParquetReportSummaryUpdater(PartitionHandlerMixin, OCPCloudUpdater
         }
         with self.db_accessor(self._schema) as accessor:
             context = accessor.extract_context_from_sql_params(sql_params)
-            for start, end in date_range_pair(start_date, end_date, step=settings.TRINO_DATE_STEP):
-                context["start_date"] = start
-                context["end_date"] = end
-                LOG.info(log_json(msg="updating OpenShift on AWS summary table", **context))
-                accessor.populate_ocp_on_aws_cost_daily_summary_trino(
-                    start,
-                    end,
-                    openshift_provider_uuid,
-                    aws_provider_uuid,
-                    current_ocp_report_period_id,
-                    current_aws_bill_id,
-                    markup_value,
-                    distribution,
-                )
-                sql_params["start_date"] = start
-                sql_params["end_date"] = end
-                accessor.back_populate_ocp_infrastructure_costs(start, end, current_ocp_report_period_id)
-                accessor.populate_ocp_on_aws_tags_summary_table(aws_bill_ids, start, end)
-                accessor.populate_ocp_on_aws_ui_summary_tables_trino(
-                    start, end, openshift_provider_uuid, aws_provider_uuid
-                )
+            context["start_date"] = start_date
+            context["end_date"] = end_date
+            LOG.info(log_json(msg="updating OpenShift on AWS summary table", **context))
+            accessor.populate_ocp_on_aws_cost_daily_summary_trino(
+                start_date,
+                end_date,
+                openshift_provider_uuid,
+                aws_provider_uuid,
+                current_ocp_report_period_id,
+                current_aws_bill_id,
+                markup_value,
+                distribution,
+            )
+            sql_params["start_date"] = start_date
+            sql_params["end_date"] = end_date
+            accessor.back_populate_ocp_infrastructure_costs(start_date, end_date, current_ocp_report_period_id)
+            accessor.populate_ocp_on_aws_tags_summary_table(aws_bill_ids, start_date, end_date)
+            accessor.populate_ocp_on_aws_ui_summary_tables_trino(
+                start_date, end_date, openshift_provider_uuid, aws_provider_uuid
+            )
 
             with OCPReportDBAccessor(self._schema) as ocp_accessor:
                 sql_params["source_type"] = "AWS"
                 LOG.info(log_json(msg="processing OCP-ALL for AWS", **context))
-                for start, end in date_range_pair(start_date, end_date, step=settings.TRINO_DATE_STEP):
-                    sql_params["start_date"] = start
-                    sql_params["end_date"] = end
-                    ocp_accessor.populate_ocp_on_all_project_daily_summary("aws", sql_params)
-                    ocp_accessor.populate_ocp_on_all_daily_summary("aws", sql_params)
-                    ocp_accessor.populate_ocp_on_all_ui_summary_tables(sql_params)
+                ocp_accessor.populate_ocp_on_all_project_daily_summary("aws", sql_params)
+                ocp_accessor.populate_ocp_on_all_daily_summary("aws", sql_params)
+                ocp_accessor.populate_ocp_on_all_ui_summary_tables(sql_params)
 
         LOG.info(log_json(msg="updating ocp_on_cloud_updated_datetime OpenShift report periods", **context))
         with schema_context(self._schema):
@@ -412,42 +407,38 @@ class OCPCloudParquetReportSummaryUpdater(PartitionHandlerMixin, OCPCloudUpdater
         }
         with self.db_accessor(self._schema) as accessor:
             context = accessor.extract_context_from_sql_params(sql_params)
-            for start, end in date_range_pair(start_date, end_date, step=settings.TRINO_DATE_STEP):
-                context["start_date"] = start
-                context["end_date"] = end
-                LOG.info(
-                    log_json(
-                        msg="updating OpenShift on Azure summary table",
-                        **context,
-                    )
+            context["start_date"] = start_date
+            context["end_date"] = end_date
+            LOG.info(
+                log_json(
+                    msg="updating OpenShift on Azure summary table",
+                    **context,
                 )
-                accessor.populate_ocp_on_azure_cost_daily_summary_trino(
-                    start,
-                    end,
-                    openshift_provider_uuid,
-                    azure_provider_uuid,
-                    current_ocp_report_period_id,
-                    current_azure_bill_id,
-                    markup_value,
-                    distribution,
-                )
-                sql_params["start_date"] = start
-                sql_params["end_date"] = end
-                accessor.back_populate_ocp_infrastructure_costs(start, end, current_ocp_report_period_id)
-                accessor.populate_ocp_on_azure_tags_summary_table(azure_bill_ids, start, end)
-                accessor.populate_ocp_on_azure_ui_summary_tables_trino(
-                    start, end, openshift_provider_uuid, azure_provider_uuid
-                )
+            )
+            accessor.populate_ocp_on_azure_cost_daily_summary_trino(
+                start_date,
+                end_date,
+                openshift_provider_uuid,
+                azure_provider_uuid,
+                current_ocp_report_period_id,
+                current_azure_bill_id,
+                markup_value,
+                distribution,
+            )
+            sql_params["start_date"] = start_date
+            sql_params["end_date"] = end_date
+            accessor.back_populate_ocp_infrastructure_costs(start_date, end_date, current_ocp_report_period_id)
+            accessor.populate_ocp_on_azure_tags_summary_table(azure_bill_ids, start_date, end_date)
+            accessor.populate_ocp_on_azure_ui_summary_tables_trino(
+                start_date, end_date, openshift_provider_uuid, azure_provider_uuid
+            )
 
             with OCPReportDBAccessor(self._schema) as ocp_accessor:
                 sql_params["source_type"] = "Azure"
                 LOG.info(log_json(msg="processing OCP-ALL for Azure", **context))
-                for start, end in date_range_pair(start_date, end_date, step=settings.TRINO_DATE_STEP):
-                    sql_params["start_date"] = start
-                    sql_params["end_date"] = end
-                    ocp_accessor.populate_ocp_on_all_project_daily_summary("azure", sql_params)
-                    ocp_accessor.populate_ocp_on_all_daily_summary("azure", sql_params)
-                    ocp_accessor.populate_ocp_on_all_ui_summary_tables(sql_params)
+                ocp_accessor.populate_ocp_on_all_project_daily_summary("azure", sql_params)
+                ocp_accessor.populate_ocp_on_all_daily_summary("azure", sql_params)
+                ocp_accessor.populate_ocp_on_all_ui_summary_tables(sql_params)
 
         LOG.info(log_json(msg="updating ocp_on_cloud_updated_datetime OpenShift report periods", **context))
         with schema_context(self._schema):
@@ -534,39 +525,36 @@ class OCPCloudParquetReportSummaryUpdater(PartitionHandlerMixin, OCPCloudUpdater
         }
         with self.db_accessor(self._schema) as accessor:
             context = accessor.extract_context_from_sql_params(sql_params)
-            for start, end in date_range_pair(start_date, end_date, step=settings.TRINO_DATE_STEP):
-                context["start_date"] = start
-                context["end_date"] = end
-                LOG.info(log_json(msg="updating OpenShift on GCP summary table", **context))
-                accessor.populate_ocp_on_gcp_cost_daily_summary_trino(
-                    start,
-                    end,
-                    openshift_provider_uuid,
-                    cluster_id,
-                    gcp_provider_uuid,
-                    current_ocp_report_period_id,
-                    current_gcp_bill_id,
-                    markup_value,
-                    distribution,
-                )
-                sql_params["start_date"] = start
-                sql_params["end_date"] = end
-                accessor.back_populate_ocp_infrastructure_costs(start, end, current_ocp_report_period_id)
-                accessor.populate_ocp_on_gcp_ui_summary_tables_trino(
-                    start, end, openshift_provider_uuid, gcp_provider_uuid
-                )
-                accessor.populate_ocp_on_gcp_tags_summary_table(gcp_bill_ids, start, end)
+            context["start_date"] = start_date
+            context["end_date"] = end_date
+            LOG.info(log_json(msg="updating OpenShift on GCP summary table", **context))
+            accessor.populate_ocp_on_gcp_cost_daily_summary_trino(
+                start_date,
+                end_date,
+                openshift_provider_uuid,
+                cluster_id,
+                gcp_provider_uuid,
+                current_ocp_report_period_id,
+                current_gcp_bill_id,
+                markup_value,
+                distribution,
+            )
+            sql_params["start_date"] = start_date
+            sql_params["end_date"] = end_date
+            accessor.back_populate_ocp_infrastructure_costs(start_date, end_date, current_ocp_report_period_id)
+            accessor.populate_ocp_on_gcp_ui_summary_tables_trino(
+                start_date, end_date, openshift_provider_uuid, gcp_provider_uuid
+            )
+            accessor.populate_ocp_on_gcp_tags_summary_table(gcp_bill_ids, start_date, end_date)
 
             with OCPReportDBAccessor(self._schema) as ocp_accessor:
                 sql_params["source_type"] = "GCP"
                 context = ocp_accessor.extract_context_from_sql_params(sql_params)
                 LOG.info(log_json(msg="processing OCP-ALL for GCP (T)", **context))
-                for start, end in date_range_pair(start_date, end_date, step=settings.TRINO_DATE_STEP):
-                    sql_params["start_date"] = start
-                    sql_params["end_date"] = end
-                    ocp_accessor.populate_ocp_on_all_project_daily_summary("gcp", sql_params)
-                    ocp_accessor.populate_ocp_on_all_daily_summary("gcp", sql_params)
-                    ocp_accessor.populate_ocp_on_all_ui_summary_tables(sql_params)
+                LOG.info(f"\n\\ SQL PARAMS: {sql_params} \n\n")
+                ocp_accessor.populate_ocp_on_all_project_daily_summary("gcp", sql_params)
+                ocp_accessor.populate_ocp_on_all_daily_summary("gcp", sql_params)
+                ocp_accessor.populate_ocp_on_all_ui_summary_tables(sql_params)
 
         LOG.info(
             log_json(
