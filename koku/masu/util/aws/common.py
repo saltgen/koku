@@ -33,6 +33,15 @@ from reporting.provider.aws.models import AWSCostEntryBill
 
 LOG = logging.getLogger(__name__)
 
+CSV_COLUMN_PREFIX = (
+    "resourceTags/",
+    "costCategory/",
+    "bill/",
+    "lineItem/",
+    "pricing/",
+    "discount/",
+    "product/sku",
+)
 
 RECOMMENDED_COLUMNS = {
     "bill/BillingEntity",

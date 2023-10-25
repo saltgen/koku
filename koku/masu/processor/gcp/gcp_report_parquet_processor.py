@@ -7,6 +7,7 @@ import ciso8601
 from django.conf import settings
 from django_tenants.utils import schema_context
 
+from masu.external.downloader.gcp.gcp_csv_reader import GCPCSVReader
 from masu.processor.report_parquet_processor_base import ReportParquetProcessorBase
 from masu.util import common as utils
 from reporting.provider.gcp.models import GCPCostEntryBill
@@ -18,16 +19,6 @@ from reporting.provider.gcp.models import TRINO_OCP_ON_GCP_DAILY_TABLE
 
 class GCPReportParquetProcessor(ReportParquetProcessorBase):
     def __init__(self, manifest_id, account, s3_path, provider_uuid, parquet_local_path):
-        numeric_columns = [
-            "cost",
-            "currency_conversion_rate",
-            "usage_amount",
-            "usage_amount_in_pricing_units",
-            "credit_amount",
-            "daily_credits",
-        ]
-        date_columns = ["usage_start_time", "usage_end_time", "export_time", "partition_time"]
-        boolean_columns = ["ocp_matched"]
         if "openshift" in s3_path:
             table_name = TRINO_OCP_ON_GCP_DAILY_TABLE
         elif "daily" in s3_path:
@@ -35,9 +26,9 @@ class GCPReportParquetProcessor(ReportParquetProcessorBase):
         else:
             table_name = TRINO_LINE_ITEM_TABLE
         column_types = {
-            "numeric_columns": numeric_columns,
-            "date_columns": date_columns,
-            "boolean_columns": boolean_columns,
+            "numeric_columns": GCPCSVReader.NUMERIC_COLUMNS,
+            "date_columns": GCPCSVReader.DATE_COLUMNS,
+            "boolean_columns": GCPCSVReader.BOOLEAN_COLUMNS,
         }
         super().__init__(
             manifest_id=manifest_id,

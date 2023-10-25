@@ -7,6 +7,7 @@ import ciso8601
 from django.conf import settings
 from django_tenants.utils import schema_context
 
+from masu.external.downloader.aws.aws_csv_reader import AWSCSVReader
 from masu.processor.report_parquet_processor_base import ReportParquetProcessorBase
 from masu.util import common as utils
 from reporting.provider.aws.models import AWSCostEntryBill
@@ -18,30 +19,11 @@ from reporting.provider.aws.models import TRINO_OCP_ON_AWS_DAILY_TABLE
 
 class AWSReportParquetProcessor(ReportParquetProcessorBase):
     def __init__(self, manifest_id, account, s3_path, provider_uuid, parquet_local_path):
-        numeric_columns = [
-            "lineitem_normalizationfactor",
-            "lineitem_normalizedusageamount",
-            "lineitem_usageamount",
-            "lineitem_unblendedcost",
-            "lineitem_unblendedrate",
-            "lineitem_blendedcost",
-            "lineitem_blendedrate",
-            "savingsplan_savingsplaneffectivecost",
-            "pricing_publicondemandrate",
-            "pricing_publicondemandcost",
-        ]
-        date_columns = [
-            "lineitem_usagestartdate",
-            "lineitem_usageenddate",
-            "bill_billingperiodstartdate",
-            "bill_billingperiodenddate",
-        ]
-        boolean_columns = ["resource_id_matched"]
 
         column_types = {
-            "numeric_columns": numeric_columns,
-            "date_columns": date_columns,
-            "boolean_columns": boolean_columns,
+            "numeric_columns": AWSCSVReader.NUMERIC_COLUMNS,
+            "date_columns": AWSCSVReader.DATE_COLUMNS,
+            "boolean_columns": AWSCSVReader.AWS_BOOLEAN_COLUMNS,
         }
 
         if "openshift" in s3_path:

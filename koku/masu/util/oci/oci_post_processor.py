@@ -1,12 +1,12 @@
 import json
 
-import ciso8601
 import pandas as pd
 
 from api.models import Provider
+from masu.external.downloader.oci.oci_csv_reader import OCICSVReader
 from masu.util.common import populate_enabled_tag_rows_with_limit
-from masu.util.common import safe_float
 from masu.util.common import strip_characters_from_column_name
+from masu.util.common import verify_data_types_in_parquet_file
 from reporting.provider.oci.models import TRINO_REQUIRED_COLUMNS
 
 
@@ -15,27 +15,10 @@ def scrub_resource_col_name(res_col_name):
 
 
 class OCIPostProcessor:
-    def __init__(self, schema):
+    def __init__(self, schema, csv_filepath):
         self.schema = schema
         self.enabled_tag_keys = set()
-
-    def get_column_converters(self, col_names, panda_kwargs):
-        """
-        Return source specific parquet column converters.
-        """
-        converters = {
-            "bill/billingperiodstartdate": ciso8601.parse_datetime,
-            "bill/billingperiodenddate": ciso8601.parse_datetime,
-            "lineitem/intervalusagestart": ciso8601.parse_datetime,
-            "lineitem/intervalusageend": ciso8601.parse_datetime,
-            "usage/consumedquantity": safe_float,
-            "cost/mycost": safe_float,
-        }
-        csv_converters = {
-            col_name: converters[col_name.lower()] for col_name in col_names if col_name.lower() in converters
-        }
-        csv_converters.update({col: str for col in col_names if col not in csv_converters})
-        return csv_converters, panda_kwargs
+        self.csv_reader = OCICSVReader(csv_filepath)
 
     def check_ingress_required_columns(self, _):
         """
@@ -76,7 +59,7 @@ class OCIPostProcessor:
 
         return daily_data_frame
 
-    def process_dataframe(self, data_frame):
+    def process_dataframe(self, data_frame, parquet_filepath):
         """
         Consume the OCI data and add a column creating a dictionary for the oci tags
         """
@@ -108,7 +91,11 @@ class OCIPostProcessor:
                 drop_columns.append(column)
         data_frame = data_frame.drop(columns=drop_columns)
         data_frame = data_frame.rename(columns=column_name_map)
-        return data_frame, self._generate_daily_data(data_frame)
+        data_frame.to_parquet(parquet_filepath, allow_truncated_timestamps=True, coerce_timestamps="ms", index=False)
+        verify_data_types_in_parquet_file(
+            parquet_filepath, self.csv_reader.numeric_columns, self.csv_reader.date_columns
+        )
+        return self._generate_daily_data(data_frame)
 
     def finalize_post_processing(self):
         """

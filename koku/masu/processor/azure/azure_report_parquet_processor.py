@@ -7,6 +7,7 @@ import ciso8601
 from django.conf import settings
 from django_tenants.utils import schema_context
 
+from masu.external.downloader.azure.azure_csv_reader import AzureCSVReader
 from masu.processor.report_parquet_processor_base import ReportParquetProcessorBase
 from masu.util import common as utils
 from reporting.provider.azure.models import AzureCostEntryBill
@@ -17,22 +18,10 @@ from reporting.provider.azure.models import TRINO_OCP_ON_AZURE_DAILY_TABLE
 
 class AzureReportParquetProcessor(ReportParquetProcessorBase):
     def __init__(self, manifest_id, account, s3_path, provider_uuid, parquet_local_path):
-        numeric_columns = [
-            "usagequantity",
-            "quantity",
-            "resourcerate",
-            "pretaxcost",
-            "costinbillingcurrency",
-            "effectiveprice",
-            "unitprice",
-            "paygprice",
-        ]
-        date_columns = ["usagedatetime", "date", "billingperiodstartdate", "billingperiodenddate"]
-        boolean_columns = ["resource_id_matched"]
         column_types = {
-            "numeric_columns": numeric_columns,
-            "date_columns": date_columns,
-            "boolean_columns": boolean_columns,
+            "numeric_columns": AzureCSVReader.NUMERIC_COLUMNS,
+            "date_columns": AzureCSVReader.DATE_COLUMNS,
+            "boolean_columns": AzureCSVReader.BOOLEAN_COLUMNS,
         }
         if "openshift" in s3_path:
             table_name = TRINO_OCP_ON_AZURE_DAILY_TABLE
