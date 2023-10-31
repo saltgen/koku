@@ -42,11 +42,13 @@ file_path = "fake-output1.parquet"
 my_df = my_df.reindex(columns=columns)
 my_df.to_parquet(file_path, allow_truncated_timestamps=True, coerce_timestamps="ms", index=False)
 file_paths.append(file_path)
+
+my_df_2 = pd.read_csv("trino-bug.csv", converters=converters)
 file_path = "fake-output2.parquet"
-my_df["extrastrcol"] = pd.Series(dtype=str)
-my_df["extrafloat"] = pd.Series(dtype=float)
-my_df["extratime"] = pd.Series(dtype="datetime64[ns]")
-my_df.to_parquet(file_path, allow_truncated_timestamps=True, coerce_timestamps="ms", index=False)
+my_df_2["extrastrcol"] = pd.Series(dtype=str)
+my_df_2["extrafloat"] = pd.Series(dtype=float)
+my_df_2["extratime"] = pd.Series(dtype="datetime64[ns]")
+my_df_2.to_parquet(file_path, allow_truncated_timestamps=True, coerce_timestamps="ms", index=False)
 file_paths.append(file_path)
 
 aws_session = boto3.Session(
