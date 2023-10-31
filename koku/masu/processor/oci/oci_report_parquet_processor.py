@@ -7,7 +7,6 @@ import ciso8601
 from django.conf import settings
 from django_tenants.utils import schema_context
 
-from masu.external.downloader.oci.oci_csv_reader import OCICSVReader
 from masu.processor.report_parquet_processor_base import ReportParquetProcessorBase
 from masu.util import common as utils
 from reporting.provider.oci.models import OCICostEntryBill
@@ -17,11 +16,21 @@ from reporting.provider.oci.models import TRINO_LINE_ITEM_TABLE_MAP
 
 
 class OCIReportParquetProcessor(ReportParquetProcessorBase):
+
+    NUMERIC_COLUMNS = ["usage_consumedquantity", "cost_mycost"]
+    DATE_COLUMNS = [
+        "lineitem_intervalusagestart",
+        "lineitem_intervalusageend",
+        "bill_billingperiodstartdate",
+        "bill_billingperiodenddate",
+    ]
+    BOOLEAN_COLUMNS = ["resource_id_matched"]
+
     def __init__(self, manifest_id, account, s3_path, provider_uuid, parquet_local_path, report_type):
         column_types = {
-            "numeric_columns": OCICSVReader.NUMERIC_COLUMNS,
-            "date_columns": OCICSVReader.DATE_COLUMNS,
-            "boolean_columns": OCICSVReader.BOOLEAN_COLUMNS,
+            "numeric_columns": self.NUMERIC_COLUMNS,
+            "date_columns": self.DATE_COLUMNS,
+            "boolean_columns": self.BOOLEAN_COLUMNS,
         }
         if "daily" in s3_path:
             table_name = TRINO_LINE_ITEM_DAILY_TABLE_MAP[report_type]

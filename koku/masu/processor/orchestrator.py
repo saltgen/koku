@@ -22,6 +22,7 @@ from masu.external.report_downloader import ReportDownloaderError
 from masu.processor import is_cloud_source_processing_disabled
 from masu.processor import is_customer_large
 from masu.processor import is_source_disabled
+from masu.processor.tasks import fix_parquet_data_types
 from masu.processor.tasks import get_report_files
 from masu.processor.tasks import GET_REPORT_FILES_QUEUE
 from masu.processor.tasks import GET_REPORT_FILES_QUEUE_XL
@@ -440,4 +441,26 @@ class Orchestrator:
                 str(async_result),
             )
             async_results.append({"customer": account.get("customer_name"), "async_id": str(async_result)})
+        return async_results
+
+    def fix_parquet_data_types(self, simulate=False):
+        """
+        Fixes the parquet file data type for each account.
+
+        Args:
+            simulate (Boolean) simulate the parquet file fixing.
+
+        Returns:
+            (celery.result.AsyncResult) Async result for deletion request.
+        """
+        simulate = True
+        async_results = []
+        for account in Provider.objects.get_accounts():
+            schema_name = account.get("schema_name")
+            provider_type = account.get("provider_type")
+            provider_uuid = account.get("provider_uuid")
+            if "OCI" in provider_type:
+                LOG.info("Calling fix_parquet_data_types with account: %s", schema_name)
+                async_result = fix_parquet_data_types.delay(schema_name, provider_type, provider_uuid, simulate)
+                async_results.append(async_result)
         return async_results

@@ -1,24 +1,51 @@
 import json
+import logging
 
+import ciso8601
 import pandas as pd
 
 from api.models import Provider
-from masu.external.downloader.oci.oci_csv_reader import OCICSVReader
+from masu.processor.oci.oci_report_parquet_processor import OCIReportParquetProcessor as trino_schema
 from masu.util.common import populate_enabled_tag_rows_with_limit
+from masu.util.common import safe_float
 from masu.util.common import strip_characters_from_column_name
-from masu.util.common import verify_data_types_in_parquet_file
 from reporting.provider.oci.models import TRINO_REQUIRED_COLUMNS
+
+LOG = logging.getLogger(__name__)
 
 
 def scrub_resource_col_name(res_col_name):
     return res_col_name.split(".")[-1]
 
 
+def check_all_parquet_files_corrected():
+    # A place holder for some type of check that notifies us
+    # that we have fixed all the parquet files for this
+    # account for this provider so we can switch to the new data types.
+    return False
+
+
 class OCIPostProcessor:
-    def __init__(self, schema, csv_filepath):
+    def __init__(self, schema):
         self.schema = schema
         self.enabled_tag_keys = set()
-        self.csv_reader = OCICSVReader(csv_filepath)
+
+    def get_column_converters(self, col_names, panda_kwargs):
+        """
+        Return source specific parquet column converters.
+        """
+        converters = {}
+        for column_name in col_names:
+            cleaned_column = strip_characters_from_column_name(column_name)
+            if cleaned_column in trino_schema.NUMERIC_COLUMNS:
+                converters[column_name] = safe_float
+            elif cleaned_column in trino_schema.DATE_COLUMNS:
+                converters[column_name] = ciso8601.parse_datetime
+            elif cleaned_column in trino_schema.BOOLEAN_COLUMNS:
+                converters[column_name] = bool
+            else:
+                converters[column_name] = str
+        return converters, panda_kwargs
 
     def check_ingress_required_columns(self, _):
         """
@@ -59,11 +86,28 @@ class OCIPostProcessor:
 
         return daily_data_frame
 
-    def process_dataframe(self, data_frame, parquet_filepath):
+    def _add_missing_columns_with_dtypes(self, data_frame):
+        """Adds the missing columns with the correct dtypes."""
+        if check_all_parquet_files_corrected():
+            raw_columns = data_frame.columns.tolist()
+            missing_columns = [col for col in TRINO_REQUIRED_COLUMNS if col not in raw_columns]
+            for raw_column in missing_columns:
+                cleaned_column = strip_characters_from_column_name(raw_column)
+                if cleaned_column in trino_schema.NUMERIC_COLUMNS:
+                    data_frame[raw_column] = data_frame[raw_column].astype(float)
+                elif cleaned_column in trino_schema.BOOLEAN_COLUMNS:
+                    data_frame[raw_column] = data_frame[raw_column].astype(bool)
+                elif cleaned_column in trino_schema.DATE_COLUMNS:
+                    data_frame[raw_column] = pd.to_datetime(data_frame[raw_column], errors="coerce")
+                else:
+                    data_frame[raw_column] = data_frame[raw_column].astype(str)
+        return data_frame
+
+    def process_dataframe(self, data_frame):
         """
         Consume the OCI data and add a column creating a dictionary for the oci tags
         """
-
+        data_frame = self._add_missing_columns_with_dtypes(data_frame)
         columns = set(list(data_frame))
         columns = set(TRINO_REQUIRED_COLUMNS).union(columns)
         columns = sorted(list(columns))
@@ -91,11 +135,7 @@ class OCIPostProcessor:
                 drop_columns.append(column)
         data_frame = data_frame.drop(columns=drop_columns)
         data_frame = data_frame.rename(columns=column_name_map)
-        data_frame.to_parquet(parquet_filepath, allow_truncated_timestamps=True, coerce_timestamps="ms", index=False)
-        verify_data_types_in_parquet_file(
-            parquet_filepath, self.csv_reader.numeric_columns, self.csv_reader.date_columns
-        )
-        return self._generate_daily_data(data_frame)
+        return data_frame, self._generate_daily_data(data_frame)
 
     def finalize_post_processing(self):
         """

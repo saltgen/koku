@@ -17,8 +17,6 @@ from threading import RLock
 from uuid import uuid4
 
 import pandas as pd
-import pyarrow
-import pyarrow.parquet as pq
 from dateutil import parser
 from dateutil.rrule import DAILY
 from dateutil.rrule import rrule
@@ -33,73 +31,6 @@ from masu.database.provider_db_accessor import ProviderDBAccessor
 from reporting.provider.all.models import EnabledTagKeys
 
 LOG = logging.getLogger(__name__)
-
-CSV_GZIP_EXT = ".csv.gz"
-
-
-def check_unleash():
-    return True
-
-
-def coerce_parquet_data_type(parquet_file_path, target_column, correct_data_type):
-    """If a parquet file has an incorrect dtype we can attempt to coerce
-    it to the correct type it.
-    """
-    try:
-        table = pq.read_table(parquet_file_path)
-        schema = table.schema
-        if target_column not in schema.names:
-            raise ValueError(f"Column '{target_column}' not found in the Parquet file.")
-        current_data_type = schema.field(target_column).type
-        if current_data_type != correct_data_type:
-            new_fields = [
-                field if field.name != target_column else pyarrow.field(target_column, correct_data_type)
-                for field in schema
-            ]
-            new_schema = pyarrow.schema(new_fields)
-            table = table.cast(new_schema)
-            pq.write_table(table, f"corrected_{parquet_file_path}")
-            # Discussion topic: We should discuss if we want to overwrite the local parquet file or
-            # create a seperate file.
-            print(f"Data type for column '{target_column}' has been corrected.")
-        else:
-            print(f"Data type for column '{target_column}' is already correct in the Parquet file.")
-
-    except Exception as e:
-        LOG.info(f"An error occurred: {str(e)}")
-
-
-# Additional Note: I plan to use this logic to convert our current parquet files
-# to the correct data type.
-def verify_data_types_in_parquet_file(parquet_file_path, numeric_columns, date_columns):
-    """Check the parquet file types."""
-    table = pq.read_table(parquet_file_path)
-    schema = table.schema
-    column_dtype_mapping = {field.name: field.type for field in schema}
-    for column, current_dtype in column_dtype_mapping.items():
-        if column in numeric_columns:
-            expected_type = pyarrow.float64()
-        elif column in date_columns:
-            expected_type = pyarrow.timestamp("ms")
-        else:
-            expected_type = pyarrow.string()
-        if current_dtype != expected_type:
-            try:
-                check_unleash()
-                coerce_parquet_data_type(parquet_file_path, column, expected_type)
-
-            except Exception as e:
-                # Add some logic here to update the metadata on the parquet file
-                # to include a new state to indicate that the metadata conversion
-                # failed
-
-                # We can scrape for these parquet files through this key. We can retry
-                # these files after we update our logic to handle the failures.
-                LOG.warning(f"UNEXPECTED DTYPE({column}): {current_dtype} != {expected_type}")
-                LOG.warning(f"{e}")
-        else:
-            LOG.info(f"Key {column} is correct type: {expected_type}")
-    return column_dtype_mapping
 
 
 def extract_uuids_from_string(source_string):

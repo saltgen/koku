@@ -7,9 +7,8 @@ import pandas as pd
 from dateutil.parser import ParserError
 
 from api.models import Provider
-from masu.external.downloader.ocp.ocp_csv_reader import OCPCSVReader
 from masu.util.common import populate_enabled_tag_rows_with_false
-from masu.util.common import verify_data_types_in_parquet_file
+from masu.util.common import safe_float
 from masu.util.ocp.common import OCP_REPORT_TYPES
 
 LOG = logging.getLogger(__name__)
@@ -64,18 +63,11 @@ def process_openshift_labels_to_json(label_val):
 
 
 class OCPPostProcessor:
-    def __init__(self, schema, csv_filepath, report_type):
+    def __init__(self, schema, report_type):
         self.schema = schema
         self.enabled_tag_keys = set()
         self.report_type = report_type
         self.ocp_report_types = OCP_REPORT_TYPES
-        self.csv_reader = OCPCSVReader(csv_filepath)
-        self.parquet_conversion_started()
-
-    def parquet_conversion_started(self):
-        # Update a new state to show that we have made it
-        # to the conversion step.
-        return True
 
     def __add_effective_usage_columns(self, data_frame):
         """Add effective usage columns to pod data frame."""
@@ -93,11 +85,42 @@ class OCPPostProcessor:
         """
         Checks the required columns for ingress.
         """
-        # Question: Are we notifing our ingress users
-        # of when they don't have the required columns.
-        # If not we could add a wrapper to notify customers
-        # to this mehtod.
         return None
+
+    def get_column_converters(self, col_names, panda_kwargs):
+        """
+        Return source specific parquet column converters.
+        """
+        converters = {
+            "report_period_start": process_openshift_datetime,
+            "report_period_end": process_openshift_datetime,
+            "interval_start": process_openshift_datetime,
+            "interval_end": process_openshift_datetime,
+            "pod_usage_cpu_core_seconds": safe_float,
+            "pod_request_cpu_core_seconds": safe_float,
+            "pod_limit_cpu_core_seconds": safe_float,
+            "pod_usage_memory_byte_seconds": safe_float,
+            "pod_request_memory_byte_seconds": safe_float,
+            "pod_limit_memory_byte_seconds": safe_float,
+            "node_capacity_cpu_cores": safe_float,
+            "node_capacity_cpu_core_seconds": safe_float,
+            "node_capacity_memory_bytes": safe_float,
+            "node_capacity_memory_byte_seconds": safe_float,
+            "persistentvolumeclaim_capacity_bytes": safe_float,
+            "persistentvolumeclaim_capacity_byte_seconds": safe_float,
+            "volume_request_storage_byte_seconds": safe_float,
+            "persistentvolumeclaim_usage_byte_seconds": safe_float,
+            "pod_labels": process_openshift_labels_to_json,
+            "persistentvolume_labels": process_openshift_labels_to_json,
+            "persistentvolumeclaim_labels": process_openshift_labels_to_json,
+            "node_labels": process_openshift_labels_to_json,
+            "namespace_labels": process_openshift_labels_to_json,
+        }
+        csv_converters = {
+            col_name: converters[col_name.lower()] for col_name in col_names if col_name.lower() in converters
+        }
+        csv_converters.update({col: str for col in col_names if col not in csv_converters})
+        return csv_converters, panda_kwargs
 
     def _generate_daily_data(self, data_frame):
         """Given a dataframe, group the data to create daily data."""
@@ -127,12 +150,7 @@ class OCPPostProcessor:
 
         return daily_data_frame
 
-    def process_dataframe(self, data_frame, parquet_filepath):
-        # Track New State: Parquet Conversion has started
-        # TODO: See if we can track which i we are from batching
-        # in the ParquetReportProcessor. We could track that
-        # so that we could know where in the process we failed
-        # to convert to parquet.
+    def process_dataframe(self, data_frame):
         label_columns = {"pod_labels", "volume_labels", "namespace_labels", "node_labels"}
         df_columns = set(data_frame.columns)
         columns_to_grab = df_columns.intersection(label_columns)
@@ -142,13 +160,10 @@ class OCPPostProcessor:
             for label in unique_labels:
                 label_key_set.update(json.loads(label).keys())
         self.enabled_tag_keys.update(label_key_set)
-        data_frame.to_parquet(parquet_filepath, allow_truncated_timestamps=True, coerce_timestamps="ms", index=False)
-        verify_data_types_in_parquet_file()
-        return self._generate_daily_data(data_frame, parquet_filepath)
+        return data_frame, self._generate_daily_data(data_frame)
 
     def finalize_post_processing(self):
         """
         Uses information gather in the post processing to update the cost models.
         """
         populate_enabled_tag_rows_with_false(self.schema, self.enabled_tag_keys, Provider.PROVIDER_OCP)
-        # Track New State: Parquet Conversion is complete

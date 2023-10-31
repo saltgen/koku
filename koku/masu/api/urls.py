@@ -6,6 +6,7 @@
 from django.urls import path
 from rest_framework.routers import DefaultRouter
 
+from masu.api.fix_parquet import fix_parquet
 from masu.api.manifest.views import ManifestView
 from masu.api.sources.views import SourcesViewSet
 from masu.api.trino import trino_ui
@@ -41,10 +42,15 @@ from masu.api.views import update_cost_model_costs
 from masu.api.views import update_exchange_rates
 from masu.api.views import update_openshift_on_cloud
 
+# we decided not to use a wrapper.
+# path("report_data/", coerce_parquet_files(report_data), name="report_data"),
+# from masu.util.upgrade_trino_poc import coerce_parquet_files
+
 ROUTER = DefaultRouter()
 ROUTER.register(r"sources", SourcesViewSet, basename="sources")
 
 urlpatterns = [
+    path("fix_parquet/", fix_parquet, name="fix-parquet"),
     path("status/", get_status, name="server-status"),
     path("download/", download_report, name="report_download"),
     path("ingress_reports/", ingress_reports, name="ingress_reports"),

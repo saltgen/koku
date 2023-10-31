@@ -34,7 +34,6 @@ from masu.util.aws.common import get_s3_objects_not_matching_metadata
 from masu.util.azure.azure_post_processor import AzurePostProcessor
 from masu.util.common import get_hive_table_path
 from masu.util.common import get_path_prefix
-from masu.util.gcp.deprecated_gcp_post_processor import DeprecatedGCPPostProcessor
 from masu.util.gcp.gcp_post_processor import GCPPostProcessor
 from masu.util.oci.common import detect_type as oci_detect_type
 from masu.util.oci.oci_post_processor import OCIPostProcessor
@@ -57,10 +56,6 @@ class ReportsAlreadyProcessed(Exception):
 
 class ParquetReportProcessorError(Exception):
     pass
-
-
-def check_unleash():
-    return True
 
 
 class ParquetReportProcessor:
@@ -99,7 +94,6 @@ class ParquetReportProcessor:
 
         self.split_files = [Path(file) for file in self._context.get("split_files") or []]
         self.ocp_files_to_process: dict[str, dict[str, str]] = self._context.get("ocp_files_to_process")
-        self.use_data_types = check_unleash()
 
     @property
     def schema_name(self):
@@ -280,28 +274,19 @@ class ParquetReportProcessor:
             else get_s3_objects_not_matching_metadata
         )
 
-    def _set_deprecated_post_processor(self):
-        # We could create two distinct flows here depending on how we want to roll
-        # this out. It may not be necessary, but worth discussing.
-        if self.provider_type in [Provider.PROVIDER_GCP, Provider.PROVIDER_GCP_LOCAL]:
-            post_processor = DeprecatedGCPPostProcessor(schema=self._schema_name)
-        return post_processor
-
-    def _set_post_processor(self, csv_filename: os.PathLike):
+    def _set_post_processor(self):
         """Post processor based on provider type."""
         post_processor = None
         if self.provider_type in [Provider.PROVIDER_AWS, Provider.PROVIDER_AWS_LOCAL]:
-            post_processor = AWSPostProcessor(schema=self._schema_name, csv_filepath=csv_filename)
+            post_processor = AWSPostProcessor(schema=self._schema_name)
         elif self.provider_type in [Provider.PROVIDER_AZURE, Provider.PROVIDER_AZURE_LOCAL]:
-            post_processor = AzurePostProcessor(schema=self.schema_name, csv_filepath=csv_filename)
+            post_processor = AzurePostProcessor(schema=self.schema_name)
         elif self.provider_type in [Provider.PROVIDER_GCP, Provider.PROVIDER_GCP_LOCAL]:
             post_processor = GCPPostProcessor(schema=self._schema_name)
         elif self.provider_type in [Provider.PROVIDER_OCI, Provider.PROVIDER_OCI_LOCAL]:
-            post_processor = OCIPostProcessor(schema=self._schema_name, csv_filepath=csv_filename)
+            post_processor = OCIPostProcessor(schema=self._schema_name)
         elif self.provider_type == Provider.PROVIDER_OCP:
-            post_processor = OCPPostProcessor(
-                schema=self._schema_name, csv_filepath=csv_filename, report_type=self.report_type
-            )
+            post_processor = OCPPostProcessor(schema=self._schema_name, report_type=self.report_type)
         return post_processor
 
     def _set_report_processor(self, parquet_file, daily=False):
@@ -411,6 +396,11 @@ class ParquetReportProcessor:
         Convert archived CSV data from our S3 bucket for a given provider to Parquet.
 
         This function chiefly follows the download of a providers data.
+
+        This task is defined to attempt up to 10 retries using exponential backoff
+        starting with a 10-second delay. This is intended to allow graceful handling
+        of temporary AWS S3 connectivity issues because it is relatively important
+        for us to convert the archived data.
         """
         parquet_base_filename = ""
 
@@ -466,19 +456,7 @@ class ParquetReportProcessor:
             if self.provider_type == Provider.PROVIDER_OCI:
                 file_specific_start_date = str(csv_filename).split(".")[1]
                 self.start_date = file_specific_start_date
-
-            # Fallback mechanism
-            if self.use_data_types:
-                parquet_base_filename, daily_frame, success = self.convert_csv_to_parquet(csv_filename)
-                if not success:
-                    # Retry without using data types.
-                    self.use_data_types = False
-                    parquet_base_filename, daily_frame, success = self.convert_csv_to_parquet_without_dtype(
-                        csv_filename
-                    )
-            else:
-                parquet_base_filename, daily_frame, success = self.convert_csv_to_parquet_without_dtype(csv_filename)
-
+            parquet_base_filename, daily_frame, success = self.convert_csv_to_parquet(csv_filename)
             daily_data_frames.extend(daily_frame)
             if self.provider_type not in (Provider.PROVIDER_AZURE):
                 self.create_daily_parquet(parquet_base_filename, daily_frame)
@@ -510,59 +488,19 @@ class ParquetReportProcessor:
         processor.sync_hive_partitions()
         self.trino_table_exists[self.report_type] = True
 
-    def check_required_columns_for_ingress_reports(self, post_processor):
+    def check_required_columns_for_ingress_reports(self, post_processor, col_names):
         LOG.info(log_json(msg="checking required columns for ingress reports", context=self._context))
         if not check_ingress_columns:
-            if missing_cols := post_processor.check_ingress_required_columns():
+            if missing_cols := post_processor.check_ingress_required_columns(col_names):
                 message = f"Unable to process file(s) due to missing required columns: {missing_cols}."
                 if self.ingress_reports_uuid:
                     with IngressReportDBAccessor(self.schema_name) as ingressreport_accessor:
                         ingressreport_accessor.update_ingress_report_status(self.ingress_reports_uuid, message)
                 raise ValidationError(message, code="Missing_columns")
 
-    def _upload_parquet_to_s3(self, file_path, file_name_base, file_name_suffix, file_type=None):
-        """Uploads the local file"""
-        file_name = file_name_base + file_name_suffix
-        if self._provider_type in {Provider.PROVIDER_GCP, Provider.PROVIDER_GCP_LOCAL}:
-            # We need to determine the parquet file path based off
-            # of the start of the invoice month and usage start for GCP.
-            s3_path = self._determin_s3_path_for_gcp(file_type, file_name)
-        else:
-            s3_path = self._determin_s3_path(file_type)
-        metadata = self.get_metadata(file_name_base)
-        try:
-            with open(file_path, "rb") as fin:
-                copy_data_to_s3_bucket(
-                    self.tracing_id, s3_path, file_name, fin, metadata=metadata, context=self.error_context
-                )
-                LOG.info(
-                    log_json(self.tracing_id, msg="file sent to s3", context=self.error_context, file_name=file_path)
-                )
-        except Exception as err:
-            s3_key = f"{self.parquet_path_s3}/{file_path}"
-            LOG.warn(
-                log_json(
-                    self.tracing_id,
-                    msg="file could not be written to s3",
-                    context=self.error_context,
-                    file_name=file_name,
-                    s3_key=s3_key,
-                ),
-                exc_info=err,
-            )
-            return False
-        finally:
-            self.files_to_remove.append(file_path)
-        return True
-
-    def convert_csv_to_parquet_without_dtype(self, csv_filename: os.PathLike):  # noqa: C901
-        # post_processor = self._set_deprecated_post_processor()
-        # All the previous logic here
-        return None, None, False
-
     def convert_csv_to_parquet(self, csv_filename: os.PathLike):  # noqa: C901
         """Convert CSV file to parquet and send to S3."""
-        post_processor = self._set_post_processor(csv_filename)
+        post_processor = self._set_post_processor()
         if not post_processor:
             LOG.warn(
                 log_json(self.tracing_id, msg="unrecongized provider type - cannot convert csv", context=self._context)
@@ -581,19 +519,20 @@ class ParquetReportProcessor:
         )
 
         try:
+            col_names = pd.read_csv(csv_filename, nrows=0, **kwargs).columns
             if self.ingress_reports:
-                self.check_required_columns_for_ingress_reports(post_processor)
+                self.check_required_columns_for_ingress_reports(post_processor, col_names)
 
-            kwargs["chunksize"] = settings.PARQUET_PROCESSING_BATCH_SIZE
-            kwargs = post_processor.csv_reader.generate_read_panda_kwargs(kwargs)
-
-            with pd.read_csv(csv_filename, **kwargs) as reader:
+            csv_converters, kwargs = post_processor.get_column_converters(col_names, kwargs)
+            with pd.read_csv(
+                csv_filename, converters=csv_converters, chunksize=settings.PARQUET_PROCESSING_BATCH_SIZE, **kwargs
+            ) as reader:
                 for i, data_frame in enumerate(reader):
                     if data_frame.empty:
                         continue
                     parquet_filename_suffix = f"_{i}{PARQUET_EXT}"
                     parquet_filepath = f"{self.local_path}/{parquet_base_filename}{parquet_filename_suffix}"
-                    daily_frames = post_processor.process_dataframe(data_frame, parquet_filepath)
+                    data_frame, daily_frames = post_processor.process_dataframe(data_frame)
                     daily_data_frames.append(daily_frames)
                     LOG.info(
                         log_json(
@@ -603,8 +542,8 @@ class ParquetReportProcessor:
                             file_name=csv_filename,
                         )
                     )
-                    success = self._upload_parquet_to_s3(
-                        parquet_filepath, parquet_base_filename, parquet_filename_suffix
+                    success = self._write_parquet_to_file(
+                        parquet_filepath, parquet_base_filename, parquet_filename_suffix, data_frame
                     )
                     if not success:
                         return parquet_base_filename, daily_data_frames, False
@@ -627,7 +566,6 @@ class ParquetReportProcessor:
                     msg="could not write parquet to temp file",
                     context=self.error_context,
                     file_name=csv_filename,
-                    use_data_types=self.use_data_types,
                 ),
                 exc_info=err,
             )
@@ -697,8 +635,40 @@ class ParquetReportProcessor:
 
     def _write_parquet_to_file(self, file_path, file_name_base, file_name_suffix, data_frame, file_type=None):
         """Write Parquet file and send to S3."""
+        file_name = file_name_base + file_name_suffix
+        if self._provider_type in {Provider.PROVIDER_GCP, Provider.PROVIDER_GCP_LOCAL}:
+            # We need to determine the parquet file path based off
+            # of the start of the invoice month and usage start for GCP.
+            s3_path = self._determin_s3_path_for_gcp(file_type, file_name)
+        else:
+            s3_path = self._determin_s3_path(file_type)
         data_frame.to_parquet(file_path, allow_truncated_timestamps=True, coerce_timestamps="ms", index=False)
-        return self._upload_parquet_to_s3(file_path, file_name_base, file_name_suffix, file_type)
+        metadata = self.get_metadata(file_name_base)
+        try:
+            with open(file_path, "rb") as fin:
+                copy_data_to_s3_bucket(
+                    self.tracing_id, s3_path, file_name, fin, metadata=metadata, context=self.error_context
+                )
+                LOG.info(
+                    log_json(self.tracing_id, msg="file sent to s3", context=self.error_context, file_name=file_path)
+                )
+        except Exception as err:
+            s3_key = f"{self.parquet_path_s3}/{file_path}"
+            LOG.warn(
+                log_json(
+                    self.tracing_id,
+                    msg="file could not be written to s3",
+                    context=self.error_context,
+                    file_name=file_name,
+                    s3_key=s3_key,
+                ),
+                exc_info=err,
+            )
+            return False
+        finally:
+            self.files_to_remove.append(file_path)
+
+        return True
 
     def process(self):
         """Convert to parquet."""

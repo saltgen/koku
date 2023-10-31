@@ -2,13 +2,13 @@ import json
 import logging
 from json.decoder import JSONDecodeError
 
+import ciso8601
 import pandas as pd
 
 from api.models import Provider
-from masu.external.downloader.gcp.gcp_csv_reader import GCPCSVReader
 from masu.util.common import populate_enabled_tag_rows_with_false
+from masu.util.common import safe_float
 from masu.util.common import strip_characters_from_column_name
-from masu.util.common import verify_data_types_in_parquet_file
 
 LOG = logging.getLogger(__name__)
 
@@ -78,10 +78,9 @@ class GCPPostProcessor:
         "partition_date",
     }
 
-    def __init__(self, schema, csv_filepath):
+    def __init__(self, schema):
         self.schema = schema
         self.enabled_tag_keys = set()
-        self.csv_reader = GCPCSVReader(csv_filepath)
 
     def check_ingress_required_columns(self, col_names):
         """
@@ -91,6 +90,29 @@ class GCPPostProcessor:
             missing_columns = [x for x in self.INGRESS_REQUIRED_COLUMNS if x not in col_names]
             return missing_columns
         return None
+
+    def get_column_converters(self, col_names, panda_kwargs):
+        """
+        Return source specific parquet column converters.
+        """
+        converters = {
+            "usage_start_time": ciso8601.parse_datetime,
+            "usage_end_time": ciso8601.parse_datetime,
+            "project.labels": process_gcp_labels,
+            "labels": process_gcp_labels,
+            "system_labels": process_gcp_labels,
+            "export_time": ciso8601.parse_datetime,
+            "cost": safe_float,
+            "currency_conversion_rate": safe_float,
+            "usage.amount": safe_float,
+            "usage.amount_in_pricing_units": safe_float,
+            "credits": process_gcp_credits,
+        }
+        csv_converters = {
+            col_name: converters[col_name.lower()] for col_name in col_names if col_name.lower() in converters
+        }
+        csv_converters.update({col: str for col in col_names if col not in csv_converters})
+        return csv_converters, panda_kwargs
 
     def _generate_daily_data(self, data_frame):
         """
@@ -149,7 +171,7 @@ class GCPPostProcessor:
 
         return daily_data_frame
 
-    def process_dataframe(self, data_frame, parquet_filepath):
+    def process_dataframe(self, data_frame):
         """Guarantee column order for GCP parquet files"""
         columns = list(data_frame)
         column_name_map = {}
@@ -162,17 +184,8 @@ class GCPPostProcessor:
         for label in unique_labels:
             label_set.update(json.loads(label).keys())
         self.enabled_tag_keys.update(label_set)
-        data_frame.to_parquet(
-            parquet_filepath,
-            allow_truncated_timestamps=True,
-            coerce_timestamps="ms",
-            index=False,
-            dtype=self.data_types,
-        )
-        verify_data_types_in_parquet_file(
-            parquet_filepath, self.csv_reader.numeric_columns, self.csv_reader.date_columns
-        )
-        return self._generate_daily_data(data_frame)
+
+        return data_frame, self._generate_daily_data(data_frame)
 
     def finalize_post_processing(self):
         """

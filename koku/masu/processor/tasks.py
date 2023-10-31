@@ -62,6 +62,7 @@ from masu.util.common import execute_trino_query
 from masu.util.common import get_path_prefix
 from masu.util.gcp.common import deduplicate_reports_for_gcp
 from masu.util.oci.common import deduplicate_reports_for_oci
+from masu.util.upgrade_trino_poc import VerifyParquetFiles
 
 
 LOG = logging.getLogger(__name__)
@@ -301,6 +302,12 @@ def remove_expired_data(schema_name, provider, simulate, provider_uuid=None, que
     }
     LOG.info(log_json("remove_expired_data", msg="removing expired data", context=context))
     _remove_expired_data(schema_name, provider, simulate, provider_uuid)
+
+
+@celery_app.task(name="masu.processor.tasks.fix_parquet_data_types", queue=DEFAULT)
+def fix_parquet_data_types(schema_name, provider_type, provider_uuid, simulate, queue_name=None):
+    verify_parquet = VerifyParquetFiles(schema_name, provider_uuid, provider_type, simulate)
+    verify_parquet.retrieve_verify_reload_S3_parquet()
 
 
 @celery_app.task(name="masu.processor.tasks.summarize_reports", queue=SUMMARIZE_REPORTS_QUEUE)  # noqa: C901
