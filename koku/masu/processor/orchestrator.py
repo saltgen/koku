@@ -453,7 +453,7 @@ class Orchestrator:
         Returns:
             (celery.result.AsyncResult) Async result for deletion request.
         """
-        simulate = True
+        # simulate = True
         async_results = []
         for account in Provider.objects.get_accounts():
             schema_name = account.get("schema_name")

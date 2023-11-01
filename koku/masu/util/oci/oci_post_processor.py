@@ -94,9 +94,10 @@ class OCIPostProcessor:
             for raw_column in missing_columns:
                 cleaned_column = strip_characters_from_column_name(raw_column)
                 if cleaned_column in trino_schema.NUMERIC_COLUMNS:
-                    data_frame[raw_column] = data_frame[raw_column].astype(float)
+                    data_frame[raw_column] = pd.Series(float)
                 elif cleaned_column in trino_schema.BOOLEAN_COLUMNS:
-                    data_frame[raw_column] = data_frame[raw_column].astype(bool)
+                    data_frame[raw_column] = pd.Series(bool)
+                    # data_frame[raw_column].astype(bool)
                 elif cleaned_column in trino_schema.DATE_COLUMNS:
                     data_frame[raw_column] = pd.to_datetime(data_frame[raw_column], errors="coerce")
                 else:
