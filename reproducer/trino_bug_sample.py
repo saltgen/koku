@@ -22,7 +22,6 @@ S3_ENDPOINT = "http://localhost:9000"
 S3_ACCESS_KEY = "kokuminioaccess"
 S3_SECRET = "kokuminiosecret"
 
-# "ciso8601.parse_datetime"
 EXTRA_COLUMNS = ["extrastrcol", "extrafloat", "extratime"]
 converters = {
     "filledstrcol": str,
@@ -31,6 +30,8 @@ converters = {
     "emptyfloat": safe_float,
     "filledtime": ciso8601.parse_datetime,
 }
+# Parquet file one:
+file_path = "fake-output1.parquet"
 my_df = pd.read_csv("trino-bug.csv", converters=converters)
 
 columns = set(my_df)
@@ -38,18 +39,28 @@ columns = set(EXTRA_COLUMNS).union(columns)
 columns = sorted(columns)
 
 file_paths = []
-file_path = "fake-output1.parquet"
 my_df = my_df.reindex(columns=columns)
 my_df.to_parquet(file_path, allow_truncated_timestamps=True, coerce_timestamps="ms", index=False)
 file_paths.append(file_path)
 
+# Parquet file two:
 my_df_2 = pd.read_csv("trino-bug.csv", converters=converters)
 file_path = "fake-output2.parquet"
-my_df_2["extrastrcol"] = pd.Series(dtype=str)
-my_df_2["extrafloat"] = pd.Series(dtype=float)
-my_df_2["extratime"] = pd.Series(dtype="datetime64[ns]")
+my_df_2["extrafloat"] = pd.Series(dtype=float)  # sets it to a float
+my_df_2["extrastrcol"] = pd.Series(dtype=str)  # sets it be an object
+# https://stackoverflow.com/questions/21018654/strings-in-a-dataframe-but-dtype-is-object
+my_df_2["extratime"] = pd.Series(dtype="datetime64[ns]")  # sets it to be a time
+
 my_df_2.to_parquet(file_path, allow_truncated_timestamps=True, coerce_timestamps="ms", index=False)
 file_paths.append(file_path)
+
+file_paths = [
+    # "fake-output1.parquet",
+    # "fake-output2.parquet",
+    "different_backend.parquet"
+]
+local_path = "files/"
+# local_path = ""
 
 aws_session = boto3.Session(
     aws_access_key_id=S3_ACCESS_KEY,
@@ -57,11 +68,14 @@ aws_session = boto3.Session(
 )
 s3_resource = aws_session.resource("s3", endpoint_url=S3_ENDPOINT)
 for file_path in file_paths:
-    s3_obj = {"bucket_name": S3_BUCKET_NAME, "key": file_path}
+    prefix = "/data/parquet/compactor_test/"
+    full_path = prefix + file_path
+    s3_obj = {"bucket_name": S3_BUCKET_NAME, "key": full_path}
     upload = s3_resource.Object(**s3_obj)
-    with open(file_path, "rb") as data:
+    with open(local_path + file_path, "rb") as data:
         upload.upload_fileobj(data)
-    os.remove(file_path)
+    if local_path != "files/":
+        os.remove(file_path)
 
 
 """
@@ -76,7 +90,7 @@ CREATE TABLE hive.org1234567.fake_parquet(
    extratime timestamp
 )
 WITH (
-   external_location = 's3a://koku-bucket/',
+   external_location = 's3a://koku-bucket/data/parquet/compactor_test/',
    format = 'PARQUET'
 ) ;
 
