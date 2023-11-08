@@ -10,6 +10,8 @@ from masu.util.common import populate_enabled_tag_rows_with_false
 from masu.util.common import safe_float
 from masu.util.common import strip_characters_from_column_name
 
+# from masu.processor.gcp.gcp_report_parquet_processor import GCPReportParquetProcessor as trino_schema
+
 LOG = logging.getLogger(__name__)
 
 
@@ -170,6 +172,23 @@ class GCPPostProcessor:
         daily_data_frame.reset_index(inplace=True)
 
         return daily_data_frame
+
+    # def _add_missing_columns_with_dtypes(self, data_frame):
+    #     """Adds the missing columns with the correct dtypes."""
+    #     raw_columns = data_frame.columns.tolist()
+    #     missing_columns = [col for col in TRINO_REQUIRED_COLUMNS if col not in raw_columns]
+    #     missing_columns = []
+    #     for raw_column in missing_columns:
+    #         cleaned_column = strip_characters_from_column_name(raw_column)
+    #         if cleaned_column in trino_schema.NUMERIC_COLUMNS:
+    #             data_frame[raw_column] = pd.Series(float)
+    #         elif cleaned_column in trino_schema.BOOLEAN_COLUMNS:
+    #             data_frame[raw_column] = pd.Series(bool)
+    #         elif cleaned_column in trino_schema.DATE_COLUMNS:
+    #             data_frame[raw_column] = pd.to_datetime(data_frame[raw_column], errors="coerce")
+    #         else:
+    #             data_frame[raw_column] = pd.Series(str)
+    #     return data_frame
 
     def process_dataframe(self, data_frame):
         """Guarantee column order for GCP parquet files"""

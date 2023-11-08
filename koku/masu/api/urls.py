@@ -40,11 +40,7 @@ from masu.api.views import stat_statements
 from masu.api.views import trino_query
 from masu.api.views import update_cost_model_costs
 from masu.api.views import update_exchange_rates
-from masu.api.views import update_openshift_on_cloud
-
-# we decided not to use a wrapper.
-# path("report_data/", coerce_parquet_files(report_data), name="report_data"),
-# from masu.util.upgrade_trino_poc import coerce_parquet_files
+from masu.api.views import update_openshift_on_cloud  # we decided not to use a wrapper.
 
 ROUTER = DefaultRouter()
 ROUTER.register(r"sources", SourcesViewSet, basename="sources")

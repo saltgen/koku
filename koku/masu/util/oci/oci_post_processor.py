@@ -18,13 +18,6 @@ def scrub_resource_col_name(res_col_name):
     return res_col_name.split(".")[-1]
 
 
-def check_all_parquet_files_corrected():
-    # A place holder for some type of check that notifies us
-    # that we have fixed all the parquet files for this
-    # account for this provider so we can switch to the new data types.
-    return False
-
-
 class OCIPostProcessor:
     def __init__(self, schema):
         self.schema = schema
@@ -88,20 +81,18 @@ class OCIPostProcessor:
 
     def _add_missing_columns_with_dtypes(self, data_frame):
         """Adds the missing columns with the correct dtypes."""
-        if check_all_parquet_files_corrected():
-            raw_columns = data_frame.columns.tolist()
-            missing_columns = [col for col in TRINO_REQUIRED_COLUMNS if col not in raw_columns]
-            for raw_column in missing_columns:
-                cleaned_column = strip_characters_from_column_name(raw_column)
-                if cleaned_column in trino_schema.NUMERIC_COLUMNS:
-                    data_frame[raw_column] = pd.Series(float)
-                elif cleaned_column in trino_schema.BOOLEAN_COLUMNS:
-                    data_frame[raw_column] = pd.Series(bool)
-                    # data_frame[raw_column].astype(bool)
-                elif cleaned_column in trino_schema.DATE_COLUMNS:
-                    data_frame[raw_column] = pd.to_datetime(data_frame[raw_column], errors="coerce")
-                else:
-                    data_frame[raw_column] = data_frame[raw_column].astype(str)
+        raw_columns = data_frame.columns.tolist()
+        missing_columns = [col for col in TRINO_REQUIRED_COLUMNS if col not in raw_columns]
+        for raw_column in missing_columns:
+            cleaned_column = strip_characters_from_column_name(raw_column)
+            if cleaned_column in trino_schema.NUMERIC_COLUMNS:
+                data_frame[raw_column] = pd.Series(dtype="float64")
+            elif cleaned_column in trino_schema.BOOLEAN_COLUMNS:
+                data_frame[raw_column] = pd.Series(dtyp="bool")
+            elif cleaned_column in trino_schema.DATE_COLUMNS:
+                data_frame[raw_column] = pd.to_datetime(data_frame[raw_column], errors="coerce")
+            else:
+                data_frame[raw_column] = pd.Series(dtype="str")
         return data_frame
 
     def process_dataframe(self, data_frame):

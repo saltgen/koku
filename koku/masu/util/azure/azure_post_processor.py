@@ -5,6 +5,7 @@ import pandas
 from numpy import nan
 
 from api.models import Provider
+from masu.processor.azure.azure_report_parquet_processor import AzureReportParquetProcessor as trino_schema
 from masu.util.azure.common import INGRESS_ALT_COLUMNS
 from masu.util.azure.common import INGRESS_REQUIRED_COLUMNS
 from masu.util.common import populate_enabled_tag_rows_with_limit
@@ -89,6 +90,22 @@ class AzurePostProcessor:
         """
         Generate daily data.
         """
+        return data_frame
+
+    def _add_missing_columns_with_dtypes(self, data_frame):
+        """Adds the missing columns with the correct dtypes."""
+        raw_columns = data_frame.columns.tolist()
+        missing_columns = [col for col in TRINO_COLUMNS if col not in raw_columns]
+        for raw_column in missing_columns:
+            cleaned_column = strip_characters_from_column_name(raw_column)
+            if cleaned_column in trino_schema.NUMERIC_COLUMNS:
+                data_frame[raw_column] = pandas.Series(float)
+            elif cleaned_column in trino_schema.BOOLEAN_COLUMNS:
+                data_frame[raw_column] = pandas.Series(bool)
+            elif cleaned_column in trino_schema.DATE_COLUMNS:
+                data_frame[raw_column] = pandas.to_datetime(data_frame[raw_column], errors="coerce")
+            else:
+                data_frame[raw_column] = pandas.Series(str)
         return data_frame
 
     def process_dataframe(self, data_frame):

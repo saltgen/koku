@@ -7,6 +7,7 @@ from django_tenants.utils import schema_context
 
 from api.common import log_json
 from api.models import Provider
+from masu.processor.aws.aws_report_parquet_processor import AWSReportParquetProcessor as trino_schema
 from masu.util.aws.common import OPTIONAL_ALT_COLS
 from masu.util.aws.common import OPTIONAL_COLS
 from masu.util.aws.common import RECOMMENDED_ALT_COLUMNS
@@ -234,6 +235,22 @@ class AWSPostProcessor:
         daily_data_frame.columns = columns
         daily_data_frame.reset_index(inplace=True)
         return daily_data_frame
+
+    def _add_missing_columns_with_dtypes(self, data_frame):
+        """Adds the missing columns with the correct dtypes."""
+        raw_columns = data_frame.columns.tolist()
+        missing_columns = [col for col in TRINO_REQUIRED_COLUMNS if col not in raw_columns]
+        for raw_column in missing_columns:
+            cleaned_column = strip_characters_from_column_name(raw_column)
+            if cleaned_column in trino_schema.NUMERIC_COLUMNS:
+                data_frame[raw_column] = pd.Series(float)
+            elif cleaned_column in trino_schema.BOOLEAN_COLUMNS:
+                data_frame[raw_column] = pd.Series(bool)
+            elif cleaned_column in trino_schema.DATE_COLUMNS:
+                data_frame[raw_column] = pd.to_datetime(data_frame[raw_column], errors="coerce")
+            else:
+                data_frame[raw_column] = pd.Series(str)
+        return data_frame
 
     def process_dataframe(self, data_frame):
         """Process dataframe."""

@@ -7,6 +7,7 @@ import pandas as pd
 from dateutil.parser import ParserError
 
 from api.models import Provider
+from masu.processor.ocp.ocp_report_parquet_processor import OCPReportParquetProcessor as trino_schema
 from masu.util.common import populate_enabled_tag_rows_with_false
 from masu.util.common import safe_float
 from masu.util.ocp.common import OCP_REPORT_TYPES
@@ -146,9 +147,24 @@ class OCPPostProcessor:
         new_cols = report.get("new_required_columns")
         for col in new_cols:
             if col not in daily_data_frame:
-                daily_data_frame[col] = None
+                self._add_missing_columns_with_dtypes(daily_data_frame, col)
 
         return daily_data_frame
+
+    def _add_missing_columns_with_dtypes(self, data_frame, missing_column=None):
+        """Adds the missing columns with the correct dtypes."""
+        if missing_column not in data_frame:
+            if missing_column in trino_schema.NUMERIC_COLUMNS:
+                data_frame[missing_column] = pd.Series(float)
+            elif missing_column in trino_schema.BOOLEAN_COLUMNS:
+                data_frame[missing_column] = pd.Series(bool)
+            elif missing_column in trino_schema.DATE_COLUMNS:
+                data_frame[missing_column] = pd.to_datetime(data_frame[missing_column], errors="coerce")
+            else:
+                LOG.info(f"missing_column: {missing_column}")
+                LOG.info(f"missing_column: {data_frame[missing_column]}")
+                data_frame[missing_column] = pd.Series(str)
+        return data_frame
 
     def process_dataframe(self, data_frame):
         label_columns = {"pod_labels", "volume_labels", "namespace_labels", "node_labels"}
