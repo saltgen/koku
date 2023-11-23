@@ -12,6 +12,8 @@ from rest_framework_csv.renderers import CSVRenderer
 
 from api.iam.test.iam_test_case import IamTestCase
 from api.iam.test.iam_test_case import RbacPermissions
+from api.provider.models import Provider
+from api.report.aws.provider_map import AWSProviderMap
 from api.utils import DateHelper
 
 
@@ -600,3 +602,13 @@ class AWSReportViewTest(IamTestCase):
         url = reverse("reports-aws-costs") + "?group_by[aws_categroy:invalid]=value"
         response = self.client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_units_consistency(self):
+        """Test if provider map used units match the report."""
+        pm = AWSProviderMap(Provider.PROVIDER_AWS, "costs", "test", "default")
+        units_dict = pm._mapping[0]
+        print("###")
+        print(units_dict["report_type"]["instance_type"]["annotations"]["usage_units"])
+        print(units_dict["report_type"]["instance_type"]["usage_units_fallback"])
+        print(units_dict["report_type"]["storage"]["annotations"]["usage_units"])
+        print(units_dict["report_type"]["storage"]["usage_units_fallback"])
