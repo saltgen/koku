@@ -59,7 +59,7 @@ def reprocess_csv_reports(request):
         schema_name=schema,
         provider_uuid=provider_uuid,
         report_month=report_month,
-        summarize_reports=False,
+        summarize_reports=summarize_reports,
         reprocess_csv_reports=True,
     )
     return Response({"Download Request Task ID": str(async_results)})
