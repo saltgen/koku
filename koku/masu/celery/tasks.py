@@ -65,6 +65,14 @@ def check_report_updates(*args, **kwargs):
     orchestrator.prepare()
 
 
+@celery_app.task(name="masu.celery.tasks.reprocess_csv_reports", queue=DEFAULT)
+def reprocess_csv_reports(*args, **kwargs):
+    """Task to initiate reprocessing of csv files to respective parquet files."""
+    orchestrator = Orchestrator(*args, **kwargs)
+    LOG.info(log_json(msg="checking for report updates", args=args, kwargs=kwargs))
+    orchestrator.start_manifest_processing()
+
+
 @celery_app.task(name="masu.celery.tasks.remove_expired_data", queue=DEFAULT)
 def remove_expired_data(simulate=False):
     """Scheduled task to initiate a job to remove expired report data."""

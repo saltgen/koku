@@ -244,6 +244,7 @@ def get_report_files(  # noqa: C901
             "metadata_end_date": report_dict.get("metadata_end_date"),
         }
 
+        # Maybe this should move to its own task? (Download/create csvs step 1, processing/create parquet step 2)
         try:
             LOG.info(log_json(tracing_id, msg="processing starting", context=context))
             worker_stats.PROCESS_REPORT_ATTEMPTS_COUNTER.labels(provider_type=provider_type).inc()
