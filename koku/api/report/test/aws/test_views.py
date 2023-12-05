@@ -4,6 +4,7 @@
 #
 """Test the AWS Report views."""
 import copy
+import csv as csv
 
 from django.urls import reverse
 from rest_framework import status
@@ -12,8 +13,6 @@ from rest_framework_csv.renderers import CSVRenderer
 
 from api.iam.test.iam_test_case import IamTestCase
 from api.iam.test.iam_test_case import RbacPermissions
-from api.provider.models import Provider
-from api.report.aws.provider_map import AWSProviderMap
 from api.utils import DateHelper
 
 
@@ -605,10 +604,23 @@ class AWSReportViewTest(IamTestCase):
 
     def test_units_consistency(self):
         """Test if provider map used units match the report."""
-        pm = AWSProviderMap(Provider.PROVIDER_AWS, "costs", "test", "default")
-        units_dict = pm._mapping[0]
-        print("###")
-        print(units_dict["report_type"]["instance_type"]["annotations"]["usage_units"])
-        print(units_dict["report_type"]["instance_type"]["usage_units_fallback"])
-        print(units_dict["report_type"]["storage"]["annotations"]["usage_units"])
-        print(units_dict["report_type"]["storage"]["usage_units_fallback"])
+        file = "October-2023-None"
+        file_name = f"{file}.csv"
+        csv_units = set()
+        file_path = f"./testing/local_providers/aws_local/None/20231001-20231101/59be89a2-1e53-4483-bb66-86d2f9f8e6b4/{file_name}"  # noqa: E501
+        provider_map_units = [
+            "Hrs",
+            "GB-Mo",
+        ]
+
+        with open(file_path) as file:
+            csv_reader = csv.DictReader(file)
+
+            for row in csv_reader:
+                valor = row.get("pricing/unit")
+
+                if valor is not None and valor not in csv_units:
+                    csv_units.add(valor)
+
+        for unit in provider_map_units:
+            self.assertIn(unit, csv_units)
