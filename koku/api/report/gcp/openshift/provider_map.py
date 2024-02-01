@@ -317,7 +317,7 @@ class OCPGCPProviderMap(ProviderMap):
                         "filter": [{"field": "instance_type", "operation": "isnull", "parameter": False}],
                         "group_by": ["instance_type"],
                         "usage_units_key": "unit",
-                        "usage_units_fallback": "hour",
+                        "usage_units_fallback": "Hrs",
                     },
                     "storage": {
                         "aggregates": {

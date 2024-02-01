@@ -447,7 +447,7 @@ class GCPProviderMap(ProviderMap):
                         "cost_units_key": "currency",
                         "cost_units_fallback": "USD",
                         "usage_units_key": "unit",
-                        "usage_units_fallback": "gibibyte month",
+                        "usage_units_fallback": "GB-Mo",
                         "sum_columns": ["usage", "cost_total", "sup_total", "infra_total"],
                         "default_ordering": {"usage": "desc"},
                     },
