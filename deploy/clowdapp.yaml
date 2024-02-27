@@ -142,6 +142,8 @@ objects:
           value: ${CACHE_TIMEOUT}
         - name: TAG_ENABLED_LIMIT
           value: ${TAG_ENABLED_LIMIT}
+        - name: PANDAS_COPY_ON_WRITE
+          value: ${PANDAS_COPY_ON_WRITE}
         image: ${IMAGE}:${IMAGE_TAG}
         initContainers:
         - command:
@@ -315,6 +317,8 @@ objects:
           value: ${ENABLE_S3_ARCHIVING}
         - name: PARQUET_PROCESSING_BATCH_SIZE
           value: ${PARQUET_PROCESSING_BATCH_SIZE}
+        - name: PANDAS_COPY_ON_WRITE
+          value: ${PANDAS_COPY_ON_WRITE}
         - name: TRINO_DATE_STEP
           value: ${TRINO_DATE_STEP}
         - name: KOKU_ENABLE_SENTRY
@@ -528,6 +532,8 @@ objects:
           value: ${TAG_ENABLED_LIMIT}
         - name: KAFKA_CONNECT
           value: ${KAFKA_CONNECT}
+        - name: PANDAS_COPY_ON_WRITE
+          value: ${PANDAS_COPY_ON_WRITE}
         - name: PROMETHEUS_PUSHGATEWAY
           value: ${PROMETHEUS_PUSHGATEWAY}
         - name: UNLEASH_CACHE_DIR
@@ -673,6 +679,8 @@ objects:
           value: ${ENABLE_S3_ARCHIVING}
         - name: PARQUET_PROCESSING_BATCH_SIZE
           value: ${PARQUET_PROCESSING_BATCH_SIZE}
+        - name: PANDAS_COPY_ON_WRITE
+          value: ${PANDAS_COPY_ON_WRITE}
         - name: TRINO_DATE_STEP
           value: ${TRINO_DATE_STEP}
         - name: KOKU_ENABLE_SENTRY
@@ -877,6 +885,8 @@ objects:
           value: ${RBAC_SERVICE_PATH}
         - name: RBAC_CACHE_TTL
           value: ${RBAC_CACHE_TTL}
+        - name: PANDAS_COPY_ON_WRITE
+          value: ${PANDAS_COPY_ON_WRITE}
         - name: PROMETHEUS_MULTIPROC_DIR
           value: ${PROMETHEUS_DIR}
         - name: KOKU_ENABLE_SENTRY
@@ -1054,6 +1064,8 @@ objects:
           value: ${RBAC_SERVICE_PATH}
         - name: RBAC_CACHE_TTL
           value: ${RBAC_CACHE_TTL}
+        - name: PANDAS_COPY_ON_WRITE
+          value: ${PANDAS_COPY_ON_WRITE}
         - name: PROMETHEUS_MULTIPROC_DIR
           value: ${PROMETHEUS_DIR}
         - name: KOKU_ENABLE_SENTRY
@@ -1212,6 +1224,8 @@ objects:
           value: ${ENABLE_S3_ARCHIVING}
         - name: PARQUET_PROCESSING_BATCH_SIZE
           value: ${PARQUET_PROCESSING_BATCH_SIZE}
+        - name: PANDAS_COPY_ON_WRITE
+          value: ${PANDAS_COPY_ON_WRITE}
         - name: TRINO_DATE_STEP
           value: ${TRINO_DATE_STEP}
         - name: KOKU_ENABLE_SENTRY
@@ -1408,6 +1422,8 @@ objects:
           value: ${ENABLE_S3_ARCHIVING}
         - name: PARQUET_PROCESSING_BATCH_SIZE
           value: ${PARQUET_PROCESSING_BATCH_SIZE}
+        - name: PANDAS_COPY_ON_WRITE
+          value: ${PANDAS_COPY_ON_WRITE}
         - name: TRINO_DATE_STEP
           value: ${TRINO_DATE_STEP}
         - name: KOKU_ENABLE_SENTRY
@@ -1610,6 +1626,8 @@ objects:
           value: ${ENABLE_S3_ARCHIVING}
         - name: PARQUET_PROCESSING_BATCH_SIZE
           value: ${PARQUET_PROCESSING_BATCH_SIZE}
+        - name: PANDAS_COPY_ON_WRITE
+          value: ${PANDAS_COPY_ON_WRITE}
         - name: TRINO_DATE_STEP
           value: ${TRINO_DATE_STEP}
         - name: KOKU_ENABLE_SENTRY
@@ -1814,6 +1832,8 @@ objects:
           value: ${PARQUET_PROCESSING_BATCH_SIZE}
         - name: PANDAS_COLUMN_BATCH_SIZE
           value: ${PANDAS_COLUMN_BATCH_SIZE}
+        - name: PANDAS_COPY_ON_WRITE
+          value: ${PANDAS_COPY_ON_WRITE}
         - name: TRINO_DATE_STEP
           value: ${TRINO_DATE_STEP}
         - name: KOKU_ENABLE_SENTRY
@@ -2020,6 +2040,8 @@ objects:
           value: ${PARQUET_PROCESSING_BATCH_SIZE}
         - name: PANDAS_COLUMN_BATCH_SIZE
           value: ${PANDAS_COLUMN_BATCH_SIZE}
+        - name: PANDAS_COPY_ON_WRITE
+          value: ${PANDAS_COPY_ON_WRITE}
         - name: TRINO_DATE_STEP
           value: ${TRINO_DATE_STEP}
         - name: KOKU_ENABLE_SENTRY
@@ -2224,6 +2246,8 @@ objects:
           value: ${ENABLE_S3_ARCHIVING}
         - name: PARQUET_PROCESSING_BATCH_SIZE
           value: ${PARQUET_PROCESSING_BATCH_SIZE}
+        - name: PANDAS_COPY_ON_WRITE
+          value: ${PANDAS_COPY_ON_WRITE}
         - name: TRINO_DATE_STEP
           value: ${TRINO_DATE_STEP}
         - name: KOKU_ENABLE_SENTRY
@@ -2428,6 +2452,8 @@ objects:
           value: ${ENABLE_S3_ARCHIVING}
         - name: PARQUET_PROCESSING_BATCH_SIZE
           value: ${PARQUET_PROCESSING_BATCH_SIZE}
+        - name: PANDAS_COPY_ON_WRITE
+          value: ${PANDAS_COPY_ON_WRITE}
         - name: TRINO_DATE_STEP
           value: ${TRINO_DATE_STEP}
         - name: KOKU_ENABLE_SENTRY
@@ -2634,6 +2660,8 @@ objects:
           value: ${PARQUET_PROCESSING_BATCH_SIZE}
         - name: PANDAS_COLUMN_BATCH_SIZE
           value: ${PANDAS_COLUMN_BATCH_SIZE}
+        - name: PANDAS_COPY_ON_WRITE
+          value: ${PANDAS_COPY_ON_WRITE}
         - name: TRINO_DATE_STEP
           value: ${TRINO_DATE_STEP}
         - name: KOKU_ENABLE_SENTRY
@@ -2844,6 +2872,8 @@ objects:
           value: ${PARQUET_PROCESSING_BATCH_SIZE}
         - name: PANDAS_COLUMN_BATCH_SIZE
           value: ${PANDAS_COLUMN_BATCH_SIZE}
+        - name: PANDAS_COPY_ON_WRITE
+          value: ${PANDAS_COPY_ON_WRITE}
         - name: TRINO_DATE_STEP
           value: ${TRINO_DATE_STEP}
         - name: KOKU_ENABLE_SENTRY
@@ -3052,6 +3082,8 @@ objects:
           value: ${ENABLE_S3_ARCHIVING}
         - name: PARQUET_PROCESSING_BATCH_SIZE
           value: ${PARQUET_PROCESSING_BATCH_SIZE}
+        - name: PANDAS_COPY_ON_WRITE
+          value: ${PANDAS_COPY_ON_WRITE}
         - name: TRINO_DATE_STEP
           value: ${TRINO_DATE_STEP}
         - name: KOKU_ENABLE_SENTRY
@@ -3254,6 +3286,8 @@ objects:
           value: ${ENABLE_S3_ARCHIVING}
         - name: PARQUET_PROCESSING_BATCH_SIZE
           value: ${PARQUET_PROCESSING_BATCH_SIZE}
+        - name: PANDAS_COPY_ON_WRITE
+          value: ${PANDAS_COPY_ON_WRITE}
         - name: TRINO_DATE_STEP
           value: ${TRINO_DATE_STEP}
         - name: KOKU_ENABLE_SENTRY
@@ -3456,6 +3490,8 @@ objects:
           value: ${ENABLE_S3_ARCHIVING}
         - name: PARQUET_PROCESSING_BATCH_SIZE
           value: ${PARQUET_PROCESSING_BATCH_SIZE}
+        - name: PANDAS_COPY_ON_WRITE
+          value: ${PANDAS_COPY_ON_WRITE}
         - name: TRINO_DATE_STEP
           value: ${TRINO_DATE_STEP}
         - name: KOKU_ENABLE_SENTRY
@@ -3662,6 +3698,8 @@ objects:
           value: ${ENABLE_S3_ARCHIVING}
         - name: PARQUET_PROCESSING_BATCH_SIZE
           value: ${PARQUET_PROCESSING_BATCH_SIZE}
+        - name: PANDAS_COPY_ON_WRITE
+          value: ${PANDAS_COPY_ON_WRITE}
         - name: TRINO_DATE_STEP
           value: ${TRINO_DATE_STEP}
         - name: KOKU_ENABLE_SENTRY
@@ -3870,6 +3908,8 @@ objects:
           value: ${ENABLE_S3_ARCHIVING}
         - name: PARQUET_PROCESSING_BATCH_SIZE
           value: ${PARQUET_PROCESSING_BATCH_SIZE}
+        - name: PANDAS_COPY_ON_WRITE
+          value: ${PANDAS_COPY_ON_WRITE}
         - name: TRINO_DATE_STEP
           value: ${TRINO_DATE_STEP}
         - name: KOKU_ENABLE_SENTRY
@@ -4072,6 +4112,8 @@ objects:
           value: ${ENABLE_S3_ARCHIVING}
         - name: PARQUET_PROCESSING_BATCH_SIZE
           value: ${PARQUET_PROCESSING_BATCH_SIZE}
+        - name: PANDAS_COPY_ON_WRITE
+          value: ${PANDAS_COPY_ON_WRITE}
         - name: TRINO_DATE_STEP
           value: ${TRINO_DATE_STEP}
         - name: KOKU_ENABLE_SENTRY
@@ -4238,6 +4280,8 @@ objects:
           value: ${ENABLE_S3_ARCHIVING}
         - name: PARQUET_PROCESSING_BATCH_SIZE
           value: ${PARQUET_PROCESSING_BATCH_SIZE}
+        - name: PANDAS_COPY_ON_WRITE
+          value: ${PANDAS_COPY_ON_WRITE}
         - name: TRINO_DATE_STEP
           value: ${TRINO_DATE_STEP}
         - name: KOKU_ENABLE_SENTRY
@@ -4715,6 +4759,11 @@ parameters:
   name: PANDAS_COLUMN_BATCH_SIZE
   required: true
   value: "250"
+- description: Enable copy-on-write in Pandas
+  displayName: Pandas copy-on-write
+  name: PANDAS_COPY_ON_WRITE
+  required: true
+  value: "1"
 - description: Processing batch size
   displayName: Processing batch size
   name: REPORT_PROCESSING_BATCH_SIZE
