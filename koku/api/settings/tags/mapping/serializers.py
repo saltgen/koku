@@ -55,8 +55,22 @@ class AddChildSerializer(serializers.Serializer):
     parent = serializers.UUIDField()
     children = serializers.ListField(child=serializers.UUIDField())
 
+    def _unify_parent_key(self, data):
+        """Unifies duplicate parents keys under a single uuid."""
+        enabled_row = EnabledTagKeys.objects.filter(uuid=data["parent"]).first()
+        if not enabled_row:
+            return data
+        tag_map = TagMapping.objects.filter(parent__key=enabled_row.key).first()
+        if not tag_map:
+            return data
+        if tag_map.parent_id == data["parent"]:
+            return data
+        data["parent"] = tag_map.parent_id
+        return data
+
     def validate(self, data):
         """This function validates the options and returns the enabled tag rows."""
+        data = self._unify_parent_key(data)
         children_list = data["children"]
         combined_list = [data["parent"]] + children_list
         enabled_rows = EnabledTagKeys.objects.filter(uuid__in=combined_list, enabled=True)
@@ -84,10 +98,5 @@ class AddChildSerializer(serializers.Serializer):
         if errors:
             formatted_errors = [f"{log_msg} {log_list}" for log_msg, log_list in errors.items()]
             raise serializers.ValidationError(formatted_errors)
-
-        # Check if a the parent key is already in use.
-        print("breakpoint")
-        # parent_row = parent_key = enabled_rows.filter(uuid=data["parent"]).first()
-        # parent_key
 
         return data
