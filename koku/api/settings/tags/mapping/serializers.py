@@ -12,6 +12,14 @@ from reporting.provider.all.models import EnabledTagKeys
 from reporting.provider.all.models import TagMapping
 
 
+class ParentSerializer(serializers.ModelSerializer):
+    cost_model_id = serializers.UUIDField()
+
+    class Meta:
+        model = EnabledTagKeys
+        fields = ["uuid", "key", "cost_model_id"]
+
+
 class ViewOptionsSerializer(serializers.ModelSerializer):
     """Intended to be used in conjuntion with the CostModelAnnotationMixin."""
 
@@ -76,4 +84,10 @@ class AddChildSerializer(serializers.Serializer):
         if errors:
             formatted_errors = [f"{log_msg} {log_list}" for log_msg, log_list in errors.items()]
             raise serializers.ValidationError(formatted_errors)
+
+        # Check if a the parent key is already in use.
+        print("breakpoint")
+        # parent_row = parent_key = enabled_rows.filter(uuid=data["parent"]).first()
+        # parent_key
+
         return data
